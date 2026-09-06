@@ -198,6 +198,29 @@ st.markdown(
         margin-top: 4px !important;
     }
 
+    /* Tipografía Cinzel únicamente para la pastilla de redacción de consulta */
+    div[data-testid="stForm"] textarea,
+    textarea#input_consulta_area {
+        font-family: 'Cinzel', serif !important;
+        font-size: 0.95rem !important;
+        letter-spacing: 0.5px !important;
+        color: #E1E6EB !important;
+    }
+    div[data-testid="stForm"] textarea::placeholder,
+    textarea#input_consulta_area::placeholder {
+        font-family: 'Cinzel', serif !important;
+        font-size: 0.88rem !important;
+        letter-spacing: 0.8px !important;
+        color: #8A99A8 !important;
+    }
+
+    /* Ajuste visual del contenedor del formulario sin bordes extras */
+    div[data-testid="stForm"] {
+        border: none !important;
+        padding: 0 !important;
+        background: transparent !important;
+    }
+
     @keyframes fadeIn {
         from { opacity: 0; transform: translateY(6px); }
         to { opacity: 1; transform: translateY(0); }
@@ -207,7 +230,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# ----------------- BASE DE DATOS CON MIGRACIONES AUTOMÁTICAS -----------------
+# ----------------- BASE DE DATOS Y MIGRACIONES -----------------
 DB_FILE = "chronn_os.db"
 
 def init_db():
@@ -255,7 +278,7 @@ def init_db():
 
 init_db()
 
-# ----------------- OPERACIONES DE PERSISTENCIA -----------------
+# ----------------- OPERACIONES DE BASE DE DATOS -----------------
 def crear_o_actualizar_sesion_db(session_id: str, primer_mensaje: str, cuaderno: str = "General") -> str:
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -336,24 +359,30 @@ def obtener_claude_api_key():
 
 CLAUDE_API_KEY = obtener_claude_api_key()
 
-# ----------------- MATRIZ DE DIRECTIVAS PEDAGÓGICAS -----------------
+# ----------------- DIRECTIVAS SIMBIÓTICAS Y PEDAGÓGICAS -----------------
 PROMPTS_CHRONN = {
     "Profesor De Medicina": (
         "DIRECTIVAS PEDAGÓGICAS DE CÁTEDRA (FCM - UNC):\n"
-        "1. ROL DOCENTE: Eres un distinguido Catedrático y Cirujano de dilatada trayectoria docente en la Facultad de Ciencias Médicas de la UNC. "
+        "1. ROL DOCENTE: Eres un distinguido Catedrático y Cirujano de amplia trayectoria docente en la Facultad de Ciencias Médicas de la UNC. "
         "Acompañas a Gail en su preparación hacia la cirugía general con respeto, afecto y paciencia.\n"
-        "2. PRIMERA RESPUESTA OBLIGATORIA: Inicia tus respuestas SIEMPRE con un 'Sí' o un 'No' rotundo cuando la pregunta lo permita. "
-        "Posteriormente, brinda la explicación clara, didáctica y al grano.\n"
-        "3. DIDÁCTICA CON MÁXIMO RIGOR TÉCNICO: Explica con analogías visuales comprensibles pero conservando la terminología médica "
-        "y bioquímica oficial de cátedra (Harper, Blanco, Guyton, Ross, Robbins).\n"
-        "4. CERO COMPLACENCIA: Si Gail tiene un error de concepto o confunde una vía o anatomía, corrígela con calidez pero con total honestidad.\n"
-        "5. CERO ALUCINACIÓN: Precisión absoluta en vías biológicas, dosis y signos clínicos.\n"
+        "2. PROTOCOLO DE APERTURA Y SALUDO:\n"
+        "   - En el PRIMER mensaje de un hilo nuevo: Saluda de forma breve, afectuosa y concisa (ej.: 'Hola, Gail. ¿En qué tema de cátedra nos enfocamos hoy?'). "
+        "Está TERMINANTEMENTE PROHIBIDO explicar tu currículum, dar listas de lo que sabes hacer o hacer presentaciones extensas.\n"
+        "   - En los MENSAJES SIGUIENTES del mismo hilo: NO saludes de nuevo. NO digas 'Hola Gail', '¿Cómo estás?' ni fórmulas reiterativas. "
+        "Pasa de inmediato al contenido técnico respondiendo de forma fluida y continua.\n"
+        "3. PRIMERA RESPUESTA OBLIGATORIA: Inicia tus explicaciones SIEMPRE con un 'Sí' o un 'No' rotundo cuando la pregunta lo permita, y fundamenta con claridad didáctica.\n"
+        "4. RIGOR TÉCNICO DE CÁTEDRA: Utiliza la nomenclatura médica y bioquímica oficial (Harper, Blanco, Guyton, Ross, Robbins). No simplifiques términos biológicos ni anatómicos.\n"
+        "5. CERO COMPLACENCIA: Si Gail tiene un error de concepto, corrígela con calidez y total honestidad científica.\n"
+        "6. CERO ALUCINACIÓN: Precisión categórica en enzimas, ciclos metabólicos y semiología.\n"
     ),
     "Guardián": (
         "DIRECTIVAS DEL GUARDIÁN UNIVERSAL:\n"
-        "1. ROL: Mentor, consejero de vida y protector incondicional de Gail. Sabiduría universal y resolución práctica sobre cualquier ámbito.\n"
-        "2. GESTIÓN Y TRÁMITES: Dominas todos los trámites estudiantiles y civiles de Córdoba (Boleto Educativo Gratuito - BEG, Siu Guaraní, CIDI Córdoba, gestiones de salud).\n"
-        "3. TEMPLANZA Y HONESTIDAD: Cálido, protector y firme. Sin complacencias; dices siempre la verdad para cuidar su camino.\n"
+        "1. ROL: Mentor, consejero de vida y protector incondicional de Gail. Sabiduría y resolución práctica sobre cualquier aspecto.\n"
+        "2. PROTOCOLO DE SALUDO:\n"
+        "   - En el PRIMER mensaje: Saludo breve y directo. Cero introducciones largas sobre lo que puedes hacer.\n"
+        "   - En los mensajes sucesivos: Cero saludos repetidos. Ve directo a la respuesta.\n"
+        "3. TRÁMITES Y RESOLUCIÓN: Dominas todos los trámites estudiantiles y civiles de Córdoba (BEG, Siu Guaraní, CIDI, trámites de salud).\n"
+        "4. TEMPLANZA Y HONESTIDAD: Cálido, protector y firme. Sin complacencias; siempre con la verdad.\n"
     )
 }
 
@@ -379,8 +408,8 @@ if "modelo_ia_seleccionado" not in st.session_state:
 if "modo_operativo" not in st.session_state:
     st.session_state.modo_operativo = "Profesor De Medicina"
 
-if "pending_message" not in st.session_state:
-    st.session_state["pending_message"] = ""
+if "dispatch_payload" not in st.session_state:
+    st.session_state["dispatch_payload"] = None
 
 # ----------------- SIDEBAR -----------------
 with st.sidebar:
@@ -542,7 +571,7 @@ if vista == "chat":
     chat_container = st.container()
 
     with chat_container:
-        if not has_messages and not st.session_state.get("pending_message"):
+        if not has_messages and not st.session_state.get("dispatch_payload"):
             st.markdown(f"""
                 <div class="hero-empty-container">
                     <h1 class="greeting-header">¿Qué repasamos hoy, <span class="greeting-name-gail">Gail</span>?</h1>
@@ -567,163 +596,162 @@ if vista == "chat":
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    col_inp, col_send, col_live, col_sel = st.columns([0.62, 0.06, 0.18, 0.14])
+    # Captura controlada: formulario con reseteo inmediato para erradicar el doble envío
+    with st.form(key="form_chat_gail", clear_on_submit=True):
+        col_inp, col_send, col_live, col_sel = st.columns([0.62, 0.06, 0.18, 0.14])
 
-    with col_inp:
-        user_input = st.text_area(
-            label="Consulta:",
-            placeholder=f"Escribe tu consulta para {alias_display}...",
-            height=70,
-            label_visibility="collapsed",
-            key="input_consulta_ch"
-        )
+        with col_inp:
+            texto_ingresado = st.text_area(
+                label="Consulta:",
+                placeholder=f"Escribe tu consulta para {alias_display}...",
+                height=70,
+                label_visibility="collapsed",
+                key="input_consulta_area"
+            )
 
-    with col_send:
-        click_send = st.button("➤", help="Enviar mensaje", key="btn_send_ch", use_container_width=True)
+        with col_send:
+            submit_pressed = st.form_submit_button("➤", help="Enviar mensaje", use_container_width=True)
 
-    if click_send and user_input and user_input.strip():
-        st.session_state["pending_message"] = user_input.strip()
-
-    with col_live:
-        es_tomas = "Tomas" in voz_sel
-        dock_html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-        <style>
-            body {{ margin: 0; padding: 0; display: flex; gap: 6px; background: transparent; }}
-            .btn {{
-                flex: 1;
-                background-color: #242D33;
-                color: #E1E6EB;
-                border: 1px solid #89CFF0;
-                border-radius: 6px;
-                height: 42px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                cursor: pointer;
-                font-size: 1rem;
-                font-weight: 600;
-                transition: all 0.2s;
-            }}
-            .btn:hover {{ background-color: #89CFF0; color: #161B1E; }}
-            .rec {{ background-color: #ef4444 !important; color: white !important; border-color: #ef4444 !important; }}
-            .live {{ background-color: #10b981 !important; color: white !important; border-color: #10b981 !important; }}
-        </style>
-        </head>
-        <body>
-            <button id="btnMic" class="btn" title="Micrófono">🎙️</button>
-            <button id="btnVivo" class="btn" title="Modo En Vivo">🟢 Vivo</button>
-            <button id="btnSilenciar" class="btn" title="Silenciar explicación">⏹</button>
-
-            <script>
-                var rec = null;
-                var vivoActivo = false;
-                var esTomas = {str(es_tomas).lower()};
-
-                function stopSpeech() {{
-                    if (window.speechSynthesis) window.speechSynthesis.cancel();
+        with col_live:
+            es_tomas = "Tomas" in voz_sel
+            dock_html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+            <style>
+                body {{ margin: 0; padding: 0; display: flex; gap: 6px; background: transparent; }}
+                .btn {{
+                    flex: 1;
+                    background-color: #242D33;
+                    color: #E1E6EB;
+                    border: 1px solid #89CFF0;
+                    border-radius: 6px;
+                    height: 42px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    font-size: 1rem;
+                    font-weight: 600;
+                    transition: all 0.2s;
                 }}
-                document.getElementById('btnSilenciar').onclick = stopSpeech;
+                .btn:hover {{ background-color: #89CFF0; color: #161B1E; }}
+                .rec {{ background-color: #ef4444 !important; color: white !important; border-color: #ef4444 !important; }}
+                .live {{ background-color: #10b981 !important; color: white !important; border-color: #10b981 !important; }}
+            </style>
+            </head>
+            <body>
+                <button type="button" id="btnMic" class="btn" title="Micrófono">🎙️</button>
+                <button type="button" id="btnVivo" class="btn" title="Modo En Vivo">🟢 Vivo</button>
+                <button type="button" id="btnSilenciar" class="btn" title="Silenciar explicación">⏹</button>
 
-                function getBestVoice() {{
-                    if (!window.speechSynthesis) return null;
-                    var voices = window.speechSynthesis.getVoices();
-                    var filtered = voices.filter(function(v) {{ return v.lang.indexOf('es') !== -1; }});
-                    
-                    if (esTomas) {{
-                        var match = filtered.find(function(v) {{ 
-                            var n = v.name.toLowerCase();
-                            return (n.indexOf('tomas') !== -1 || n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1 || n.indexOf('argentina') !== -1) && n.indexOf('female') === -1 && n.indexOf('elena') === -1;
-                        }});
-                        if (match) return match;
-                    }} else {{
-                        var match = filtered.find(function(v) {{ 
-                            var n = v.name.toLowerCase();
-                            return n.indexOf('elena') !== -1 || n.indexOf('sabina') !== -1 || n.indexOf('female') !== -1 || n.indexOf('natural') !== -1;
-                        }});
-                        if (match) return match;
+                <script>
+                    var rec = null;
+                    var vivoActivo = false;
+                    var esTomas = {str(es_tomas).lower()};
+
+                    function stopSpeech() {{
+                        if (window.speechSynthesis) window.speechSynthesis.cancel();
                     }}
-                    return filtered[0] || null;
-                }}
+                    document.getElementById('btnSilenciar').onclick = stopSpeech;
 
-                if (window.speechSynthesis) {{
-                    window.speechSynthesis.onvoiceschanged = function() {{ getBestVoice(); }};
-                }}
-
-                function startSR(callback) {{
-                    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-                    if (!SR) {{ alert("Se recomienda usar Google Chrome para dictado de voz."); return; }}
-                    if (rec) rec.stop();
-                    rec = new SR();
-                    rec.lang = 'es-AR';
-                    rec.continuous = true;
-                    rec.interimResults = true;
-
-                    rec.onstart = function() {{ document.getElementById('btnMic').classList.add('rec'); }};
-                    rec.onresult = function(e) {{
-                        var str = '';
-                        for (var i = e.resultIndex; i < e.results.length; ++i) {{
-                            if (e.results[i].isFinal) str += e.results[i][0].transcript + ' ';
+                    function getBestVoice() {{
+                        if (!window.speechSynthesis) return null;
+                        var voices = window.speechSynthesis.getVoices();
+                        var filtered = voices.filter(function(v) {{ return v.lang.indexOf('es') !== -1; }});
+                        
+                        if (esTomas) {{
+                            var match = filtered.find(function(v) {{ 
+                                var n = v.name.toLowerCase();
+                                return (n.indexOf('tomas') !== -1 || n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1 || n.indexOf('argentina') !== -1) && n.indexOf('female') === -1 && n.indexOf('elena') === -1;
+                            }});
+                            if (match) return match;
+                        }} else {{
+                            var match = filtered.find(function(v) {{ 
+                                var n = v.name.toLowerCase();
+                                return n.indexOf('elena') !== -1 || n.indexOf('sabina') !== -1 || n.indexOf('female') !== -1 || n.indexOf('natural') !== -1;
+                            }});
+                            if (match) return match;
                         }}
-                        if (str.trim() !== '') {{
-                            var txts = window.parent.document.querySelectorAll('textarea');
-                            if (txts.length > 0) {{
-                                var inp = txts[0];
-                                var prev = inp.value ? inp.value + " " : "";
-                                var setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
-                                setter.call(inp, prev + str.trim());
-                                inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                if (callback) callback();
+                        return filtered[0] || null;
+                    }}
+
+                    if (window.speechSynthesis) {{
+                        window.speechSynthesis.onvoiceschanged = function() {{ getBestVoice(); }};
+                    }}
+
+                    function startSR(callback) {{
+                        var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+                        if (!SR) {{ alert("Se recomienda usar Google Chrome para dictado de voz."); return; }}
+                        if (rec) rec.stop();
+                        rec = new SR();
+                        rec.lang = 'es-AR';
+                        rec.continuous = true;
+                        rec.interimResults = true;
+
+                        rec.onstart = function() {{ document.getElementById('btnMic').classList.add('rec'); }};
+                        rec.onresult = function(e) {{
+                            var str = '';
+                            for (var i = e.resultIndex; i < e.results.length; ++i) {{
+                                if (e.results[i].isFinal) str += e.results[i][0].transcript + ' ';
                             }}
+                            if (str.trim() !== '') {{
+                                var txts = window.parent.document.querySelectorAll('textarea');
+                                if (txts.length > 0) {{
+                                    var inp = txts[0];
+                                    var prev = inp.value ? inp.value + " " : "";
+                                    var setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+                                    setter.call(inp, prev + str.trim());
+                                    inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                    if (callback) callback();
+                                }}
+                            }}
+                        }};
+                        rec.onerror = function() {{ document.getElementById('btnMic').classList.remove('rec'); }};
+                        rec.onend = function() {{ document.getElementById('btnMic').classList.remove('rec'); }};
+                        rec.start();
+                    }}
+
+                    document.getElementById('btnMic').onclick = function() {{ startSR(null); }};
+
+                    document.getElementById('btnVivo').onclick = function() {{
+                        vivoActivo = !vivoActivo;
+                        if (vivoActivo) {{
+                            document.getElementById('btnVivo').classList.add('live');
+                            startSR(function() {{
+                                var formBtns = window.parent.document.querySelectorAll('form button[type="submit"]');
+                                if (formBtns.length > 0) {{ formBtns[0].click(); }}
+                            }});
+                        }} else {{
+                            document.getElementById('btnVivo').classList.remove('live');
+                            if (rec) rec.stop();
+                            stopSpeech();
                         }}
                     }};
-                    rec.onerror = function() {{ document.getElementById('btnMic').classList.remove('rec'); }};
-                    rec.onend = function() {{ document.getElementById('btnMic').classList.remove('rec'); }};
-                    rec.start();
-                }}
+                </script>
+            </body>
+            </html>
+            """
+            components.html(dock_html, height=46)
 
-                document.getElementById('btnMic').onclick = function() {{ startSR(null); }};
+        with col_sel:
+            mod_act = st.session_state.get("modelo_ia_seleccionado", "Opus 5")
+            with st.popover(f"{mod_act} ▾", use_container_width=True):
+                st.caption("Cerebro CHRONN")
+                if st.form_submit_button("🏛️ Opus 5 (Predeterminado)", use_container_width=True):
+                    st.session_state["modelo_ia_seleccionado"] = "Opus 5"
+                    st.rerun()
+                if st.form_submit_button("🔬 Fable 5.1 (Investigación)", use_container_width=True):
+                    st.session_state["modelo_ia_seleccionado"] = "Fable 5.1"
+                    st.rerun()
 
-                document.getElementById('btnVivo').onclick = function() {{
-                    vivoActivo = !vivoActivo;
-                    if (vivoActivo) {{
-                        document.getElementById('btnVivo').classList.add('live');
-                        startSR(function() {{
-                            var btns = window.parent.document.querySelectorAll('button');
-                            for (var b of btns) {{
-                                if (b.innerText.indexOf('➤') !== -1) {{ b.click(); break; }}
-                            }}
-                        }});
-                    }} else {{
-                        document.getElementById('btnVivo').classList.remove('live');
-                        if (rec) rec.stop();
-                        stopSpeech();
-                    }}
-                }};
-            </script>
-        </body>
-        </html>
-        """
-        components.html(dock_html, height=46)
+    if submit_pressed and texto_ingresado and texto_ingresado.strip():
+        st.session_state["dispatch_payload"] = texto_ingresado.strip()
+        st.rerun()
 
-    with col_sel:
-        mod_act = st.session_state.get("modelo_ia_seleccionado", "Opus 5")
-        with st.popover(f"{mod_act} ▾", use_container_width=True):
-            st.caption("Cerebro CHRONN")
-            if st.button("🏛️ Opus 5 (Predeterminado)", use_container_width=True):
-                st.session_state["modelo_ia_seleccionado"] = "Opus 5"
-                st.rerun()
-            if st.button("🔬 Fable 5.1 (Investigación)", use_container_width=True):
-                st.session_state["modelo_ia_seleccionado"] = "Fable 5.1"
-                st.rerun()
-
-    # Procesamiento controlado sin duplicidad de turnos
-    user_prompt = st.session_state.pop("pending_message", "")
-
-    if user_prompt:
-        prompt = user_prompt
+    # Procesamiento del mensaje despachado (ejecución única, sin duplicación)
+    if st.session_state.get("dispatch_payload"):
+        prompt = st.session_state.pop("dispatch_payload")
         act_cuad_save = st.session_state.get("cuaderno_activo", "General")
         sess_id = st.session_state.get("current_session_id")
 
@@ -736,11 +764,20 @@ if vista == "chat":
         guardar_mensaje_db(sess_id, "user", prompt, act_cuad_save, img_b64)
         st.session_state["messages"].append({"role": "user", "content": prompt, "imagen_b64": img_b64})
 
+        total_turnos_usuario = len([m for m in st.session_state["messages"] if m["role"] == "user"])
+        es_primer_turno = (total_turnos_usuario == 1)
+
         respuesta_completa = ""
 
         if anthropic and CLAUDE_API_KEY and not CLAUDE_API_KEY.startswith("TU_CLAVE"):
             client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
-            system_prompt = f"{PROMPTS_CHRONN[st.session_state.modo_operativo]}\nCuaderno de estudio activo: '{act_cuad_save}'."
+            
+            contexto_turno = (
+                "CONTEXTO DEL HILO: Este es el PRIMER mensaje del hilo. Saluda brevemente a Gail sin explicar tus funciones." 
+                if es_primer_turno else 
+                "CONTEXTO DEL HILO: La conversación ya está en curso. NO saludes a Gail, no uses fórmulas de apertura, responde directamente al grano."
+            )
+            system_prompt = f"{PROMPTS_CHRONN[st.session_state.modo_operativo]}\nCuaderno de estudio activo: '{act_cuad_save}'.\n{contexto_turno}"
 
             if img_b64:
                 user_payload = [
@@ -751,19 +788,11 @@ if vista == "chat":
                 user_payload = prompt
 
             elegido = st.session_state.get("modelo_ia_seleccionado", "Opus 5")
-            if elegido == "Fable 5.1":
-                candidatos = [
-                    "claude-fable-5-1",
-                    "claude-3-5-sonnet-20241022",
-                    "claude-3-5-sonnet-20240620"
-                ]
-            else:
-                candidatos = [
-                    "claude-opus-5",
-                    "claude-3-opus-20240229",
-                    "claude-3-5-sonnet-20241022",
-                    "claude-3-5-sonnet-20240620"
-                ]
+            candidatos = (
+                ["claude-fable-5-1", "claude-3-5-sonnet-20241022", "claude-3-5-sonnet-20240620"]
+                if elegido == "Fable 5.1" else
+                ["claude-opus-5", "claude-3-opus-20240229", "claude-3-5-sonnet-20241022", "claude-3-5-sonnet-20240620"]
+            )
 
             exito = False
             for mod in candidatos:
@@ -1000,7 +1029,6 @@ elif vista == "todos_los_cuadernos":
                         if st.button("🗑️ Borrar", key=f"btn_del_c_{cid}", use_container_width=True):
                             conn_dc = sqlite3.connect(DB_FILE)
                             cdc = conn_dc.cursor()
-                            # Borra hilos y mensajes asociados a dicho cuaderno
                             cdc.execute("SELECT session_id FROM sesiones WHERE cuaderno = ?", (cnom,))
                             ses_borrar = [r[0] for r in cdc.fetchall()]
                             for sb in ses_borrar:
