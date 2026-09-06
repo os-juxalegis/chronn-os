@@ -276,6 +276,16 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS biblioteca (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            titulo TEXT,
+            tipo TEXT,
+            contenido_b64 TEXT,
+            fecha DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -354,6 +364,17 @@ def obtener_todos_los_cuadernos_nombres():
     conn.close()
     return [r[0] for r in filas]
 
+def obtener_contexto_biblioteca():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT titulo FROM biblioteca ORDER BY id DESC LIMIT 10")
+    filas = c.fetchall()
+    conn.close()
+    if not filas:
+        return ""
+    nombres = ", ".join([r[0] for r in filas])
+    return f"\nMATERIALES DE CONSULTA EN BIBLIOTECA DISPONIBLES: [{nombres}]."
+
 # ----------------- CREDENCIALES DE ANTHROPIC -----------------
 def obtener_claude_api_key():
     try:
@@ -422,6 +443,9 @@ if "modo_operativo" not in st.session_state:
 if "dispatch_payload" not in st.session_state:
     st.session_state["dispatch_payload"] = None
 
+if "pasted_image_b64" not in st.session_state:
+    st.session_state["pasted_image_b64"] = None
+
 # ----------------- SIDEBAR -----------------
 with st.sidebar:
     st.markdown("""
@@ -452,8 +476,16 @@ with st.sidebar:
     with col_bd:
         st.markdown('<span style="background-color:#27272a; color:#89CFF0; padding:2px 6px; border-radius:4px; font-size:0.7rem; font-weight:bold; border:1px solid #89CFF0;">LIVE</span>', unsafe_allow_html=True)
 
-    if st.button("📚 Biblioteca de Cátedras", use_container_width=True):
+    if st.button("📚 Biblioteca", use_container_width=True):
         st.session_state["active_view"] = "biblioteca"
+        st.rerun()
+
+    if st.button("🖼️ Imágenes", use_container_width=True):
+        st.session_state["active_view"] = "imagenes"
+        st.rerun()
+
+    if st.button("🎥 Videos", use_container_width=True):
+        st.session_state["active_view"] = "videos"
         st.rerun()
 
     st.markdown("---")
@@ -538,9 +570,7 @@ with st.sidebar:
                     st.markdown('</div>', unsafe_allow_html=True)
 
             with col_t_kebab:
-                # Menú con las 5 opciones exactas solicitadas
                 with st.popover("···", use_container_width=True):
-                    # 1. Compartir la conversación
                     if st.button("🔗 Compartir la conversación", key=f"rec_share_{s_id}", use_container_width=True):
                         st.session_state["current_session_id"] = s_id
                         st.session_state["cuaderno_activo"] = s_cuad
@@ -550,7 +580,6 @@ with st.sidebar:
                         st.toast("Conversación sincronizada con la sesión activa.")
                         st.rerun()
 
-                    # 2. Fijar / Desfijar
                     lbl_pin = "Desfijar" if s_fij else "📌 Fijar"
                     if st.button(lbl_pin, key=f"rec_pin_{s_id}", use_container_width=True):
                         nuevo_st = 0 if s_fij else 1
@@ -561,7 +590,6 @@ with st.sidebar:
                         conn_p.close()
                         st.rerun()
 
-                    # 3. Cambiar nombre
                     nom_act_rec = st.text_input("Cambiar nombre:", value=s_tit, key=f"rec_ren_txt_{s_id}")
                     if st.button("Guardar nombre", key=f"rec_btn_ren_{s_id}", use_container_width=True):
                         if nom_act_rec.strip() and nom_act_rec.strip() != s_tit:
@@ -572,7 +600,6 @@ with st.sidebar:
                             conn_r.close()
                             st.rerun()
 
-                    # 4. Agregar al cuaderno (mover o crear cuaderno nuevo en el momento)
                     st.markdown("<hr style='margin: 4px 0;'>", unsafe_allow_html=True)
                     st.caption(f"Cuaderno actual: {s_cuad}")
                     
@@ -607,7 +634,6 @@ with st.sidebar:
                             st.toast(f"Cuaderno '{nom_nuevo_c}' creado y asignado.")
                             st.rerun()
 
-                    # 5. Borrar
                     st.markdown("<hr style='margin: 4px 0;'>", unsafe_allow_html=True)
                     if st.button("🗑️ Borrar", key=f"rec_del_{s_id}", use_container_width=True):
                         conn_d = sqlite3.connect(DB_FILE)
@@ -682,7 +708,6 @@ if vista == "chat":
                     else:
                         st.markdown(f"<span style='color: #89CFF0; font-weight: 800; letter-spacing: 0.5px;'>{alias_display}:</span><br>{msg['content']}", unsafe_allow_html=True)
                         
-                        # Botón seguro de reproducción de audio por respuesta
                         texto_tts_btn = msg['content'].replace('"', '&quot;').replace('\n', ' ')[:650]
                         es_tomas_btn = "true" if "Tomas" in voz_sel else "false"
                         audio_btn_html = f"""
@@ -720,7 +745,7 @@ if vista == "chat":
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Formulario atómico con reseteo inmediato para erradicar el doble envío
+    # Formulario con Enter habilitado y pegado directo de capturas
     with st.form(key="form_chat_gail", clear_on_submit=True):
         col_inp, col_send, col_live, col_sel = st.columns([0.62, 0.06, 0.18, 0.14])
 
@@ -734,7 +759,7 @@ if vista == "chat":
             )
 
         with col_send:
-            submit_pressed = st.form_submit_button("➤", help="Enviar mensaje", use_container_width=True)
+            submit_pressed = st.form_submit_button("➤", help="Enviar mensaje (o presiona Enter)", use_container_width=True)
 
         with col_live:
             es_tomas = "Tomas" in voz_sel
@@ -802,7 +827,6 @@ if vista == "chat":
 
                     if (window.speechSynthesis) {{
                         window.speechSynthesis.onvoiceschanged = function() {{ getBestVoice(); }};
-                        // Dispara carga preliminar en memoria
                         window.speechSynthesis.getVoices();
                     }}
 
@@ -854,6 +878,39 @@ if vista == "chat":
                             stopSpeech();
                         }}
                     }};
+
+                    // Escuchador de teclado: Enter para enviar, y captura directa de portapapeles (Ctrl+V)
+                    try {{
+                        var parentDoc = window.parent.document;
+                        var txtArea = parentDoc.querySelector('textarea');
+                        if (txtArea && !txtArea.dataset.listenerAttached) {{
+                            txtArea.dataset.listenerAttached = "true";
+                            
+                            txtArea.addEventListener('keydown', function(ev) {{
+                                if (ev.key === 'Enter' && !ev.shiftKey) {{
+                                    ev.preventDefault();
+                                    var btnSub = parentDoc.querySelector('form button[type="submit"]');
+                                    if (btnSub) btnSub.click();
+                                }}
+                            }});
+
+                            txtArea.addEventListener('paste', function(ev) {{
+                                var items = (ev.clipboardData || ev.originalEvent.clipboardData).items;
+                                for (var index in items) {{
+                                    var item = items[index];
+                                    if (item.kind === 'file' && item.type.indexOf('image/') !== -1) {{
+                                        var blob = item.getAsFile();
+                                        var reader = new FileReader();
+                                        reader.onload = function(event) {{
+                                            var b64Data = event.target.result;
+                                            window.parent.postMessage({{ type: 'CHRONN_IMAGE_PASTE', data: b64Data }}, '*');
+                                        }};
+                                        reader.readAsDataURL(blob);
+                                    }}
+                                }}
+                            }});
+                        }}
+                    }} catch(e) {{}}
                 </script>
             </body>
             </html>
@@ -875,7 +932,7 @@ if vista == "chat":
         st.session_state["dispatch_payload"] = texto_ingresado.strip()
         st.rerun()
 
-    # Procesamiento controlado con ejecución unívoca
+    # Procesamiento controlado y unívoco
     if st.session_state.get("dispatch_payload"):
         prompt = st.session_state.pop("dispatch_payload")
         act_cuad_save = st.session_state.get("cuaderno_activo", "General")
@@ -885,6 +942,8 @@ if vista == "chat":
         if archivo_adj:
             img_bytes = archivo_adj.read()
             img_b64 = base64.b64encode(img_bytes).decode('utf-8')
+        elif st.session_state.get("pasted_image_b64"):
+            img_b64 = st.session_state.pop("pasted_image_b64")
 
         crear_o_actualizar_sesion_db(sess_id, prompt, act_cuad_save)
         guardar_mensaje_db(sess_id, "user", prompt, act_cuad_save, img_b64)
@@ -898,12 +957,13 @@ if vista == "chat":
         if anthropic and CLAUDE_API_KEY and not CLAUDE_API_KEY.startswith("TU_CLAVE"):
             client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
             
+            contexto_biblioteca = obtener_contexto_biblioteca()
             contexto_turno = (
                 "CONTEXTO DEL HILO: Este es el PRIMER mensaje del hilo. Saluda brevemente a Gail sin explicar tus funciones ni currículum." 
                 if es_primer_turno else 
                 "CONTEXTO DEL HILO: La conversación ya está en curso. NO saludes a Gail, no uses fórmulas de apertura, responde directamente al grano con el Sí o No categórico y la fundamentación."
             )
-            system_prompt = f"{PROMPTS_CHRONN[st.session_state.modo_operativo]}\nCuaderno de estudio activo: '{act_cuad_save}'.\n{contexto_turno}"
+            system_prompt = f"{PROMPTS_CHRONN[st.session_state.modo_operativo]}\nCuaderno de estudio activo: '{act_cuad_save}'.{contexto_biblioteca}\n{contexto_turno}"
 
             if img_b64:
                 user_payload = [
@@ -945,7 +1005,6 @@ if vista == "chat":
         guardar_mensaje_db(sess_id, "assistant", respuesta_completa, act_cuad_save)
         st.session_state["messages"].append({"role": "assistant", "content": respuesta_completa})
 
-        # Emisión de voz directa y asíncrona
         if respuesta_completa:
             texto_tts = respuesta_completa.replace('"', '\\"').replace('\n', ' ').replace('\r', '')[:650]
             es_tomas_js = str("Tomas" in voz_sel).lower()
@@ -1043,7 +1102,6 @@ elif vista == "ver_cuaderno":
 
             with col_kebab:
                 with st.popover("···", use_container_width=True):
-                    # 1. Compartir conversación
                     if st.button("🔗 Compartir conversación", key=f"act_share_{hid}", use_container_width=True):
                         st.session_state["current_session_id"] = hid
                         st.session_state["cuaderno_activo"] = nombre_cuad
@@ -1053,7 +1111,6 @@ elif vista == "ver_cuaderno":
                         st.toast("Conversación sincronizada con la sesión activa.")
                         st.rerun()
 
-                    # 2. Fijar al inicio / Desfijar
                     lbl_fijar = "Desfijar del inicio" if es_fijado else "📌 Fijar al inicio"
                     if st.button(lbl_fijar, key=f"act_pin_{hid}", use_container_width=True):
                         nuevo_estado = 0 if es_fijado else 1
@@ -1064,7 +1121,6 @@ elif vista == "ver_cuaderno":
                         conn_p.close()
                         st.rerun()
 
-                    # 3. Cambiar nombre
                     nuevo_nom_hilo = st.text_input("Cambiar nombre:", value=htitulo, key=f"ren_txt_{hid}")
                     if st.button("Guardar nombre", key=f"btn_ren_{hid}", use_container_width=True):
                         if nuevo_nom_hilo.strip():
@@ -1075,7 +1131,6 @@ elif vista == "ver_cuaderno":
                             conn_r.close()
                             st.rerun()
 
-                    # 4. Borrar
                     if st.button("🗑️ Borrar", key=f"del_cuad_h_{hid}", use_container_width=True):
                         conn_d = sqlite3.connect(DB_FILE)
                         cd = conn_d.cursor()
@@ -1131,7 +1186,6 @@ elif vista == "todos_los_cuadernos":
 
                 with col_menu:
                     with st.popover("···", use_container_width=True):
-                        # 1. Fijar / Desfijar
                         lbl_fij = "Desfijar" if cfij else "📌 Fijar"
                         if st.button(lbl_fij, key=f"btn_pin_c_{cid}", use_container_width=True):
                             nuevo_estado = 0 if cfij else 1
@@ -1142,7 +1196,6 @@ elif vista == "todos_los_cuadernos":
                             conn_fc.close()
                             st.rerun()
 
-                        # 2. Cambiar nombre
                         nuevo_nom_cuad = st.text_input("Cambiar nombre:", value=cnom, key=f"ren_c_txt_{cid}")
                         if st.button("Guardar", key=f"btn_save_ren_c_{cid}", use_container_width=True):
                             if nuevo_nom_cuad.strip() and nuevo_nom_cuad.strip() != cnom:
@@ -1160,7 +1213,6 @@ elif vista == "todos_los_cuadernos":
                                 conn_rc.close()
                                 st.rerun()
 
-                        # 3. Borrar cuaderno
                         if st.button("🗑️ Borrar", key=f"btn_del_c_{cid}", use_container_width=True):
                             conn_dc = sqlite3.connect(DB_FILE)
                             cdc = conn_dc.cursor()
@@ -1182,18 +1234,114 @@ elif vista == "todos_los_cuadernos":
         st.rerun()
 
 # ==============================================================
-# VISTAS ADICIONALES: SPARK MED, BIBLIOTECA, BUSCADOR
+# VISTA: BIBLIOTECA (CARGA Y COMPILACIÓN DOCUMENTAL)
 # ==============================================================
-elif vista == "spark":
-    st.markdown('<div class="cinzel-title" style="font-size:1.4rem;">SPARK MED — PREGUNTAS CLAVE</div>', unsafe_allow_html=True)
-    st.info("Módulo de práctica acelerada y autoevaluación para finales de la FCM.")
+elif vista == "biblioteca":
+    st.markdown('<div class="cinzel-title" style="font-size:1.5rem;">📚 BIBLIOTECA DE ESTUDIO</div>', unsafe_allow_html=True)
+    st.markdown("<p style='color:#8A99A8;'>Repositorio activo de atlas anatómicos, guías y bibliografía oficial para el razonamiento de CHRONN.</p>", unsafe_allow_html=True)
+    st.markdown("---")
+
+    col_up_bib, col_list_bib = st.columns([0.45, 0.55])
+
+    with col_up_bib:
+        st.markdown("<strong style='color:#89CFF0;'>Subir material a la Biblioteca</strong>", unsafe_allow_html=True)
+        archivo_bib = st.file_uploader("Seleccione archivo (PDF, PNG, JPG):", type=["pdf", "png", "jpg", "jpeg"], key="up_bib_file")
+        titulo_bib = st.text_input("Título o tema del documento:", placeholder="Ej.: Atlas Latarjet - Vías Biliares")
+        
+        if st.button("📥 Incorporar a Biblioteca", use_container_width=True):
+            if archivo_bib and titulo_bib.strip():
+                bytes_bib = archivo_bib.read()
+                b64_bib = base64.b64encode(bytes_bib).decode('utf-8')
+                conn_b = sqlite3.connect(DB_FILE)
+                cb = conn_b.cursor()
+                cb.execute("INSERT INTO biblioteca (titulo, tipo, contenido_b64) VALUES (?, ?, ?)", 
+                           (titulo_bib.strip(), archivo_bib.type, b64_bib))
+                conn_b.commit()
+                conn_b.close()
+                st.toast(f"'{titulo_bib.strip()}' incorporado con éxito a la biblioteca.")
+                st.rerun()
+            else:
+                st.warning("Ingrese un título y seleccione un archivo válido.")
+
+    with col_list_bib:
+        st.markdown("<strong style='color:#89CFF0;'>Materiales compilados</strong>", unsafe_allow_html=True)
+        conn_bl = sqlite3.connect(DB_FILE)
+        cbl = conn_bl.cursor()
+        cbl.execute("SELECT id, titulo, tipo, fecha FROM biblioteca ORDER BY id DESC")
+        items_bib = cbl.fetchall()
+        conn_bl.close()
+
+        if not items_bib:
+            st.info("No hay materiales en la biblioteca aún. Suba atlas o resúmenes para nutrir las respuestas.")
+        else:
+            for bid, btit, btipo, bfecha in items_bib:
+                col_it_t, col_it_del = st.columns([0.8, 0.2])
+                with col_it_t:
+                    st.markdown(f"📄 **{btit}** <br><span style='font-size:0.75rem; color:#8A99A8;'>{bfecha.split()[0]} | {btipo}</span>", unsafe_allow_html=True)
+                with col_it_del:
+                    if st.button("🗑️", key=f"del_bib_{bid}", help="Eliminar de la biblioteca"):
+                        conn_bd = sqlite3.connect(DB_FILE)
+                        cbd = conn_bd.cursor()
+                        cbd.execute("DELETE FROM biblioteca WHERE id = ?", (bid,))
+                        conn_bd.commit()
+                        conn_bd.close()
+                        st.rerun()
+                st.markdown("<hr style='margin:4px 0;'>", unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
     if st.button("← Volver al chat"):
         st.session_state["active_view"] = "chat"
         st.rerun()
 
-elif vista == "biblioteca":
-    st.markdown('<div class="cinzel-title" style="font-size:1.4rem;">BIBLIOTECA DE CÁTEDRAS</div>', unsafe_allow_html=True)
-    st.info("Espacio para compilar atlas anatómicos, guías de trabajos prácticos y resúmenes de estudio.")
+# ==============================================================
+# VISTAS: IMÁGENES Y VIDEOS
+# ==============================================================
+elif vista == "imagenes":
+    st.markdown('<div class="cinzel-title" style="font-size:1.5rem;">🖼️ IMÁGENES Y ATLAS ANATÓMICOS</div>', unsafe_allow_html=True)
+    st.markdown("<p style='color:#8A99A8;'>Cortes histológicos, esquemas de disección y placas radiográficas registradas.</p>", unsafe_allow_html=True)
+    
+    conn_im = sqlite3.connect(DB_FILE)
+    cim = conn_im.cursor()
+    cim.execute("SELECT imagen_b64, timestamp FROM chats WHERE imagen_b64 IS NOT NULL ORDER BY id DESC LIMIT 12")
+    galeria = cim.fetchall()
+    conn_im.close()
+
+    if not galeria:
+        st.info("Aún no se han compartido capturas o esquemas en las consultas de estudio.")
+    else:
+        cols_im = st.columns(3)
+        for idx, (img_b, fch) in enumerate(galeria):
+            with cols_im[idx % 3]:
+                st.image(f"data:image/png;base64,{img_b}", use_container_width=True)
+                st.caption(f"Registro: {fch.split()[0]}")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("← Volver al chat"):
+        st.session_state["active_view"] = "chat"
+        st.rerun()
+
+elif vista == "videos":
+    st.markdown('<div class="cinzel-title" style="font-size:1.5rem;">🎥 VIDEOS Y CIRUGÍAS</div>', unsafe_allow_html=True)
+    st.markdown("<p style='color:#8A99A8;'>Registro de videoclases, técnicas quirúrgicas de cátedra y procedimientos prácticos.</p>", unsafe_allow_html=True)
+    
+    url_video = st.text_input("Pegar enlace de video (YouTube o cátedra):", placeholder="https://www.youtube.com/watch?v=...")
+    if url_video:
+        try:
+            st.video(url_video)
+        except Exception:
+            st.error("No se pudo reproducir el enlace suministrado.")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("← Volver al chat"):
+        st.session_state["active_view"] = "chat"
+        st.rerun()
+
+# ==============================================================
+# VISTAS ADICIONALES: SPARK MED & BUSCADOR
+# ==============================================================
+elif vista == "spark":
+    st.markdown('<div class="cinzel-title" style="font-size:1.4rem;">SPARK MED — PREGUNTAS CLAVE</div>', unsafe_allow_html=True)
+    st.info("Módulo de práctica acelerada y autoevaluación para finales de la FCM.")
     if st.button("← Volver al chat"):
         st.session_state["active_view"] = "chat"
         st.rerun()
