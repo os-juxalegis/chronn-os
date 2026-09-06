@@ -652,7 +652,7 @@ with st.sidebar:
     modos_disp = list(PROMPTS_CHRONN.keys())
     st.session_state.modo_operativo = st.selectbox("Modo Operativo:", options=modos_disp, index=0)
     alias_chronn = st.text_input("Identidad de la IA:", value="CHRONN")
-    opciones_voces = ["Tomas (Argentina - Neural)", "Mujer (Elena - Argentina)"]
+    opciones_voces = ["Tomas (Argentina - Neural Natural)", "Mujer (Elena - Argentina Neural)"]
     voz_sel = st.selectbox("Síntesis de voz:", options=opciones_voces, index=0)
 
     st.markdown("""
@@ -717,22 +717,34 @@ if vista == "chat":
                                     window.speechSynthesis.cancel();
                                     var u = new SpeechSynthesisUtterance('{texto_tts_btn}');
                                     u.lang = 'es-AR';
-                                    u.rate = 1.0;
+                                    u.rate = 0.96;
                                     u.pitch = 1.0;
-                                    var voices = window.speechSynthesis.getVoices();
-                                    var isTomas = {es_tomas_btn};
-                                    var sel = null;
-                                    if (isTomas) {{
-                                        sel = voices.find(function(v) {{
-                                            var n = v.name.toLowerCase();
-                                            return (n.indexOf('tomas') !== -1 || n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1) && n.indexOf('female') === -1;
-                                        }});
-                                    }} else {{
-                                        sel = voices.find(function(v) {{
-                                            var n = v.name.toLowerCase();
-                                            return (n.indexOf('elena') !== -1 || n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1 || n.indexOf('sabina') !== -1);
-                                        }});
+                                    
+                                    function seleccionarVozHumana(voices) {{
+                                        var isTomas = {es_tomas_btn};
+                                        var target = null;
+                                        if (isTomas) {{
+                                            target = voices.find(function(v) {{
+                                                var n = v.name.toLowerCase();
+                                                return (n.indexOf('tomas') !== -1 || n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1) && n.indexOf('female') === -1 && (v.lang.indexOf('es-AR') !== -1 || v.lang.indexOf('es') !== -1);
+                                            }});
+                                            if (!target) {{
+                                                target = voices.find(function(v) {{
+                                                    var n = v.name.toLowerCase();
+                                                    return (v.lang.indexOf('es-AR') !== -1 || v.lang.indexOf('es') !== -1) && n.indexOf('female') === -1 && n.indexOf('elena') === -1 && n.indexOf('sabina') === -1;
+                                                }});
+                                            }}
+                                        }} else {{
+                                            target = voices.find(function(v) {{
+                                                var n = v.name.toLowerCase();
+                                                return (n.indexOf('elena') !== -1 || n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1) && (v.lang.indexOf('es-AR') !== -1 || v.lang.indexOf('es') !== -1);
+                                            }});
+                                        }}
+                                        return target;
                                     }}
+
+                                    var vcs = window.speechSynthesis.getVoices();
+                                    var sel = seleccionarVozHumana(vcs);
                                     if (sel) u.voice = sel;
                                     window.speechSynthesis.speak(u);
                                 }}
@@ -812,13 +824,19 @@ if vista == "chat":
                         if (esTomas) {{
                             var match = filtered.find(function(v) {{ 
                                 var n = v.name.toLowerCase();
-                                return (n.indexOf('tomas') !== -1 || n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1 || n.indexOf('argentina') !== -1) && n.indexOf('female') === -1 && n.indexOf('elena') === -1;
+                                return (n.indexOf('tomas') !== -1 || n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1) && n.indexOf('female') === -1 && (v.lang.indexOf('es-AR') !== -1 || v.lang.indexOf('es') !== -1);
                             }});
+                            if (!match) {{
+                                match = filtered.find(function(v) {{ 
+                                    var n = v.name.toLowerCase();
+                                    return (v.lang.indexOf('es-AR') !== -1 || v.lang.indexOf('es') !== -1) && n.indexOf('female') === -1 && n.indexOf('elena') === -1 && n.indexOf('sabina') === -1;
+                                }});
+                            }}
                             if (match) return match;
                         }} else {{
                             var match = filtered.find(function(v) {{ 
                                 var n = v.name.toLowerCase();
-                                return n.indexOf('elena') !== -1 || n.indexOf('sabina') !== -1 || n.indexOf('female') !== -1 || n.indexOf('natural') !== -1;
+                                return (n.indexOf('elena') !== -1 || n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1) && (v.lang.indexOf('es-AR') !== -1 || v.lang.indexOf('es') !== -1);
                             }});
                             if (match) return match;
                         }}
@@ -1005,42 +1023,51 @@ if vista == "chat":
         guardar_mensaje_db(sess_id, "assistant", respuesta_completa, act_cuad_save)
         st.session_state["messages"].append({"role": "assistant", "content": respuesta_completa})
 
+        # Emisión de voz neural natural optimizada
         if respuesta_completa:
             texto_tts = respuesta_completa.replace('"', '\\"').replace('\n', ' ').replace('\r', '')[:650]
             es_tomas_js = str("Tomas" in voz_sel).lower()
             tts_script = f"""
             <script>
-                function reproducirExplicacion() {{
+                function reproducirExplicacionHumana() {{
                     if (!window.speechSynthesis) return;
                     window.speechSynthesis.cancel();
                     
                     var u = new SpeechSynthesisUtterance("{texto_tts}");
                     u.lang = 'es-AR';
-                    u.rate = 1.0;
+                    u.rate = 0.96;
                     u.pitch = 1.0;
 
                     var voices = window.speechSynthesis.getVoices();
                     var isTomas = {es_tomas_js};
                     var selVoice = null;
+                    
                     if (isTomas) {{
                         selVoice = voices.find(function(v) {{
                             var n = v.name.toLowerCase();
-                            return (n.indexOf('tomas') !== -1 || n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1 || n.indexOf('argentina') !== -1) && n.indexOf('female') === -1 && n.indexOf('elena') === -1;
+                            return (n.indexOf('tomas') !== -1 || n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1) && n.indexOf('female') === -1 && (v.lang.indexOf('es-AR') !== -1 || v.lang.indexOf('es') !== -1);
                         }});
+                        if (!selVoice) {{
+                            selVoice = voices.find(function(v) {{
+                                var n = v.name.toLowerCase();
+                                return (v.lang.indexOf('es-AR') !== -1 || v.lang.indexOf('es') !== -1) && n.indexOf('female') === -1 && n.indexOf('elena') === -1 && n.indexOf('sabina') === -1;
+                            }});
+                        }}
                     }} else {{
                         selVoice = voices.find(function(v) {{
                             var n = v.name.toLowerCase();
-                            return (n.indexOf('elena') !== -1 || n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1 || n.indexOf('sabina') !== -1);
+                            return (n.indexOf('elena') !== -1 || n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1) && (v.lang.indexOf('es-AR') !== -1 || v.lang.indexOf('es') !== -1);
                         }});
                     }}
+                    
                     if (selVoice) u.voice = selVoice;
                     window.speechSynthesis.speak(u);
                 }}
 
                 if (window.speechSynthesis.getVoices().length === 0) {{
-                    window.speechSynthesis.onvoiceschanged = reproducirExplicacion;
+                    window.speechSynthesis.onvoiceschanged = reproducirExplicacionHumana;
                 }} else {{
-                    reproducirExplicacion();
+                    reproducirExplicacionHumana();
                 }}
             </script>
             """
