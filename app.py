@@ -198,17 +198,6 @@ st.markdown(
         margin-top: 4px !important;
     }
 
-    .hilo-panel-card {
-        background-color: #242D33;
-        border: 1px solid rgba(137, 207, 240, 0.3);
-        border-radius: 8px;
-        padding: 12px 16px;
-        margin-bottom: 10px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
     @keyframes fadeIn {
         from { opacity: 0; transform: translateY(6px); }
         to { opacity: 1; transform: translateY(0); }
@@ -218,7 +207,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# ----------------- BASE DE DATOS Y PERSISTENCIA -----------------
+# ----------------- BASE DE DATOS CON MIGRACIÓN AUTOMÁTICA -----------------
 DB_FILE = "chronn_os.db"
 
 def init_db():
@@ -233,6 +222,12 @@ def init_db():
             ultima_actividad DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    # Migración de contingencia: añade 'fijado' a bases de datos existentes
+    try:
+        c.execute("ALTER TABLE sesiones ADD COLUMN fijado INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
     c.execute('''
         CREATE TABLE IF NOT EXISTS chats (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -255,15 +250,15 @@ def init_db():
 
 init_db()
 
-# ----------------- OPERACIONES DE BASE DE DATOS -----------------
+# ----------------- OPERACIONES DE CONSULTA -----------------
 def crear_o_actualizar_sesion_db(session_id: str, primer_mensaje: str, cuaderno: str = "General") -> str:
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     titulo_limpio = primer_mensaje.strip().replace("\n", " ")
     titulo_final = (titulo_limpio[:30] + "..") if len(titulo_limpio) > 30 else (titulo_limpio or "Nueva consulta")
     c.execute('''
-        INSERT INTO sesiones (session_id, cuaderno, titulo, ultima_actividad)
-        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+        INSERT INTO sesiones (session_id, cuaderno, titulo, fijado, ultima_actividad)
+        VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)
         ON CONFLICT(session_id) DO UPDATE SET
             cuaderno = excluded.cuaderno,
             ultima_actividad = CURRENT_TIMESTAMP,
@@ -286,7 +281,7 @@ def guardar_mensaje_db(session_id: str, role: str, content: str, cuaderno: str =
     conn.commit()
     conn.close()
 
-def obtener_sesiones_recientes_db(limite: int = 8):
+def obtener_sesiones_recientes_db(limite: int = 7):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("""
@@ -320,7 +315,7 @@ def cargar_mensajes_sesion(session_id):
     conn.close()
     return [{"role": r[0], "content": r[1], "imagen_b64": r[2]} for r in filas]
 
-# ----------------- CREDENCIALES DE ANTHROPIC -----------------
+# ----------------- CREDENCIALES ANTHROPIC -----------------
 def obtener_claude_api_key():
     try:
         if "ANTHROPIC_API_KEY" in st.secrets:
@@ -336,24 +331,24 @@ def obtener_claude_api_key():
 
 CLAUDE_API_KEY = obtener_claude_api_key()
 
-# ----------------- MATRIZ DE DIRECTIVAS PEDAGÓGICAS -----------------
+# ----------------- DIRECTIVAS SIMBIÓTICAS Y PEDAGÓGICAS -----------------
 PROMPTS_CHRONN = {
     "Profesor De Medicina": (
         "DIRECTIVAS PEDAGÓGICAS DE CÁTEDRA (FCM - UNC):\n"
-        "1. ROL DOCENTE: Eres un distinguido Catedrático y Cirujano de dilatada trayectoria docente en la Facultad de Ciencias Médicas de la UNC. "
-        "Acompañas a Gail en su preparación rigurosa hacia la cirugía general con absoluto respeto, afecto y paciencia.\n"
+        "1. ROL DOCENTE: Eres un distinguido Catedrático y Cirujano de amplia trayectoria docente en la Facultad de Ciencias Médicas de la UNC. "
+        "Acompañas a Gail en su preparación hacia la cirugía general con respeto, afecto y paciencia.\n"
         "2. PRIMERA RESPUESTA OBLIGATORIA: Inicia tus respuestas SIEMPRE con un 'Sí' o un 'No' rotundo cuando la pregunta lo permita. "
-        "Posteriormente, brinda la explicación clara, didáctica y al grano.\n"
-        "3. EXPLICACIÓN SENCILLA CON RIGOR TÉCNICO: Explica con metáforas comprensibles pero conservando la terminología médica y bioquímica oficial "
-        "(Harper, Blanco, Guyton, Ross, Robbins). No simplifiques términos anatómicos o enzimáticos.\n"
-        "4. CERO COMPLACENCIA: Si Gail tiene un error de concepto o confunde una vía o anatomía, corrígela con calidez pero con total honestidad.\n"
-        "5. CERO ALUCINACIÓN: Precisión absoluta en vías biológicas, dosis y signos clínicos.\n"
+        "Posteriormente, brinda la fundamentación clara, didáctica y al grano.\n"
+        "3. DIDÁCTICA CON MÁXIMO RIGOR TÉCNICO: Explica con analogías visuales y sencillas, pero conservando de manera innegociable la nomenclatura médica "
+        "y bioquímica oficial de cátedra (Harper, Blanco, Guyton, Ross, Robbins).\n"
+        "4. CERO COMPLACENCIA: Si Gail comete un error conceptual o confunde una vía o plano anatómico, corrígela con calidez pero con total honestidad científica.\n"
+        "5. CERO ALUCINACIÓN: Precisión categórica en enzimas, ciclos y datos clínicos.\n"
     ),
     "Guardián": (
         "DIRECTIVAS DEL GUARDIÁN UNIVERSAL:\n"
-        "1. ROL: Mentor, consejero de vida y protector de Gail. Sabiduría universal y resolución práctica y clara sobre cualquier tema.\n"
-        "2. TRÁMITES Y GESTIÓN: Dominas todos los trámites estudiantiles, civiles y universitarios (Boleto Educativo Gratuito - BEG, Siu Guaraní, CIDI Córdoba, gestiones de salud).\n"
-        "3. HONESTIDAD Y PROTECCIÓN: Cálido, protector y firme. Sin complacencias; dices siempre la verdad para cuidar su camino.\n"
+        "1. ROL: Mentor, consejero de vida y protector incondicional de Gail. Sabiduría universal y resolución práctica sobre cualquier ámbito.\n"
+        "2. GESTIÓN Y TRÁMITES: Dominas todos los trámites estudiantiles y civiles de Córdoba (Boleto Educativo Gratuito - BEG, Siu Guaraní, CIDI Córdoba, gestiones de salud).\n"
+        "3. TEMPLANZA Y HONESTIDAD: Protector, templado y firme. Sin complacencias; dices siempre la verdad para asegurar su camino.\n"
     )
 }
 
@@ -475,7 +470,7 @@ with st.sidebar:
             es_hilo_actual = (st.session_state.get("current_session_id") == s_id and st.session_state.get("active_view") == "chat")
             col_t_btn, col_t_kebab = st.columns([0.84, 0.16])
             with col_t_btn:
-                icono_fijo = "📌 " if s["fijado"] else "💬 "
+                icono_fijo = "📌 " if s.get("fijado") else "💬 "
                 lbl_t = f"{icono_fijo}{s_tit}" if len(s_tit) <= 17 else f"{icono_fijo}{s_tit[:15]}..."
                 if es_hilo_actual:
                     st.markdown('<div class="active-chat-pill">', unsafe_allow_html=True)
@@ -633,8 +628,7 @@ if vista == "chat":
                 function getBestVoice() {{
                     if (!window.speechSynthesis) return null;
                     var voices = window.speechSynthesis.getVoices();
-                    var targetLang = 'es';
-                    var filtered = voices.filter(function(v) {{ return v.lang.indexOf(targetLang) !== -1; }});
+                    var filtered = voices.filter(function(v) {{ return v.lang.indexOf('es') !== -1; }});
                     
                     if (esTomas) {{
                         var match = filtered.find(function(v) {{ 
@@ -723,7 +717,7 @@ if vista == "chat":
                 st.session_state["modelo_ia_seleccionado"] = "Fable 5.1"
                 st.rerun()
 
-    # Procesamiento y emisión en streaming
+    # Procesamiento y llamada en streaming continuo
     user_prompt = st.session_state.pop("pending_message", "")
 
     if user_prompt:
@@ -874,7 +868,7 @@ elif vista == "ver_cuaderno":
             hid = h["session_id"]
             htitulo = h["titulo"] or "Consulta sin título"
             hfecha = str(h["timestamp"]).split()[0]
-            es_fijado = bool(h["fijado"])
+            es_fijado = bool(h.get("fijado"))
 
             col_info, col_continuar, col_kebab = st.columns([0.68, 0.20, 0.12])
             
