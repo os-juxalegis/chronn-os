@@ -198,23 +198,26 @@ st.markdown(
         margin-top: 4px !important;
     }
 
-    /* Tipografía Cinzel únicamente para la pastilla de redacción de consulta */
+    /* Tipografía sans-serif limpia con capitalización natural para la caja de texto */
     div[data-testid="stForm"] textarea,
     textarea#input_consulta_area {
-        font-family: 'Cinzel', serif !important;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
         font-size: 0.95rem !important;
-        letter-spacing: 0.5px !important;
+        letter-spacing: normal !important;
+        text-transform: none !important;
+        font-variant: normal !important;
         color: #E1E6EB !important;
     }
     div[data-testid="stForm"] textarea::placeholder,
     textarea#input_consulta_area::placeholder {
-        font-family: 'Cinzel', serif !important;
-        font-size: 0.88rem !important;
-        letter-spacing: 0.8px !important;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+        font-size: 0.92rem !important;
+        letter-spacing: normal !important;
+        text-transform: none !important;
+        font-variant: normal !important;
         color: #8A99A8 !important;
     }
 
-    /* Ajuste visual del contenedor del formulario sin bordes extras */
     div[data-testid="stForm"] {
         border: none !important;
         padding: 0 !important;
@@ -343,6 +346,14 @@ def cargar_mensajes_sesion(session_id):
     conn.close()
     return [{"role": r[0], "content": r[1], "imagen_b64": r[2]} for r in filas]
 
+def obtener_todos_los_cuadernos_nombres():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT nombre FROM cuadernos ORDER BY nombre ASC")
+    filas = c.fetchall()
+    conn.close()
+    return [r[0] for r in filas]
+
 # ----------------- CREDENCIALES DE ANTHROPIC -----------------
 def obtener_claude_api_key():
     try:
@@ -359,30 +370,30 @@ def obtener_claude_api_key():
 
 CLAUDE_API_KEY = obtener_claude_api_key()
 
-# ----------------- DIRECTIVAS SIMBIÓTICAS Y PEDAGÓGICAS -----------------
+# ----------------- DIRECTIVAS PEDAGÓGICAS DE CÁTEDRA -----------------
 PROMPTS_CHRONN = {
     "Profesor De Medicina": (
         "DIRECTIVAS PEDAGÓGICAS DE CÁTEDRA (FCM - UNC):\n"
-        "1. ROL DOCENTE: Eres un distinguido Catedrático y Cirujano de amplia trayectoria docente en la Facultad de Ciencias Médicas de la UNC. "
+        "1. ROL DOCENTE: Eres un distinguido Catedrático y Cirujano de dilatada trayectoria docente en la Facultad de Ciencias Médicas de la UNC. "
         "Acompañas a Gail en su preparación hacia la cirugía general con respeto, afecto y paciencia.\n"
-        "2. PROTOCOLO DE APERTURA Y SALUDO:\n"
-        "   - En el PRIMER mensaje de un hilo nuevo: Saluda de forma breve, afectuosa y concisa (ej.: 'Hola, Gail. ¿En qué tema de cátedra nos enfocamos hoy?'). "
-        "Está TERMINANTEMENTE PROHIBIDO explicar tu currículum, dar listas de lo que sabes hacer o hacer presentaciones extensas.\n"
+        "2. PROTOCOLO ESTRICTO DE SALUDO Y APERTURA:\n"
+        "   - En el PRIMER mensaje del hilo: Saluda de forma breve, afectuosa y directa (ej.: 'Hola, Gail. ¿En qué tema de cátedra nos enfocamos hoy?'). "
+        "Está TERMINANTEMENTE PROHIBIDO explicar tu currículum, detallar lo que sabes hacer o hacer discursos largos de presentación.\n"
         "   - En los MENSAJES SIGUIENTES del mismo hilo: NO saludes de nuevo. NO digas 'Hola Gail', '¿Cómo estás?' ni fórmulas reiterativas. "
         "Pasa de inmediato al contenido técnico respondiendo de forma fluida y continua.\n"
         "3. PRIMERA RESPUESTA OBLIGATORIA: Inicia tus explicaciones SIEMPRE con un 'Sí' o un 'No' rotundo cuando la pregunta lo permita, y fundamenta con claridad didáctica.\n"
         "4. RIGOR TÉCNICO DE CÁTEDRA: Utiliza la nomenclatura médica y bioquímica oficial (Harper, Blanco, Guyton, Ross, Robbins). No simplifiques términos biológicos ni anatómicos.\n"
-        "5. CERO COMPLACENCIA: Si Gail tiene un error de concepto, corrígela con calidez y total honestidad científica.\n"
-        "6. CERO ALUCINACIÓN: Precisión categórica en enzimas, ciclos metabólicos y semiología.\n"
+        "5. CERO COMPLACENCIA: Si Gail comete un error de concepto, corrígela con calidez y total honestidad científica.\n"
+        "6. CERO ALUCINACIÓN: Precisión categórica en vías metabólicas, enzimas y signos clínicos.\n"
     ),
     "Guardián": (
         "DIRECTIVAS DEL GUARDIÁN UNIVERSAL:\n"
-        "1. ROL: Mentor, consejero de vida y protector incondicional de Gail. Sabiduría y resolución práctica sobre cualquier aspecto.\n"
+        "1. ROL: Mentor, consejero de vida y protector incondicional de Gail. Sabiduría y resolución práctica sobre cualquier ámbito.\n"
         "2. PROTOCOLO DE SALUDO:\n"
-        "   - En el PRIMER mensaje: Saludo breve y directo. Cero introducciones largas sobre lo que puedes hacer.\n"
-        "   - En los mensajes sucesivos: Cero saludos repetidos. Ve directo a la respuesta.\n"
+        "   - En el PRIMER mensaje: Saludo breve y directo. Cero introducciones largas sobre tus funciones.\n"
+        "   - En los mensajes sucesivos: Cero saludos reiterativos. Ve directo al punto.\n"
         "3. TRÁMITES Y RESOLUCIÓN: Dominas todos los trámites estudiantiles y civiles de Córdoba (BEG, Siu Guaraní, CIDI, trámites de salud).\n"
-        "4. TEMPLANZA Y HONESTIDAD: Cálido, protector y firme. Sin complacencias; siempre con la verdad.\n"
+        "4. TEMPLANZA Y HONESTIDAD: Protector, templado y firme. Sin complacencias; siempre con la verdad.\n"
     )
 }
 
@@ -496,22 +507,29 @@ with st.sidebar:
     st.caption("CONSULTAS RECIENTES")
 
     sesiones_rec = obtener_sesiones_recientes_db(limite=7)
+    cuadernos_disponibles = obtener_todos_los_cuadernos_nombres()
+    if not cuadernos_disponibles:
+        cuadernos_disponibles = ["General"]
+
     if not sesiones_rec:
         st.markdown("<p style='font-size:0.75rem; color:#8A99A8; padding-left:4px;'>Sin consultas guardadas</p>", unsafe_allow_html=True)
     else:
         for s in sesiones_rec:
             s_id = s["session_id"]
             s_tit = s["titulo"] or "Nueva consulta"
+            s_cuad = s["cuaderno"] or "General"
+            s_fij = bool(s.get("fijado"))
             es_hilo_actual = (st.session_state.get("current_session_id") == s_id and st.session_state.get("active_view") == "chat")
-            col_t_btn, col_t_kebab = st.columns([0.84, 0.16])
+            
+            col_t_btn, col_t_kebab = st.columns([0.82, 0.18])
             with col_t_btn:
-                icono_fijo = "📌 " if s.get("fijado") else "💬 "
+                icono_fijo = "📌 " if s_fij else "💬 "
                 lbl_t = f"{icono_fijo}{s_tit}" if len(s_tit) <= 17 else f"{icono_fijo}{s_tit[:15]}..."
                 if es_hilo_actual:
                     st.markdown('<div class="active-chat-pill">', unsafe_allow_html=True)
                 if st.button(lbl_t, key=f"btn_s_{s_id}", use_container_width=True):
                     st.session_state["current_session_id"] = s_id
-                    st.session_state["cuaderno_activo"] = s["cuaderno"]
+                    st.session_state["cuaderno_activo"] = s_cuad
                     st.session_state["messages"] = cargar_mensajes_sesion(s_id)
                     st.session_state["loaded_session_id"] = s_id
                     st.session_state["active_view"] = "chat"
@@ -520,8 +538,78 @@ with st.sidebar:
                     st.markdown('</div>', unsafe_allow_html=True)
 
             with col_t_kebab:
+                # Menú con las 5 opciones exactas solicitadas
                 with st.popover("···", use_container_width=True):
-                    if st.button("🗑️ Borrar", key=f"del_h_{s_id}", use_container_width=True):
+                    # 1. Compartir la conversación
+                    if st.button("🔗 Compartir la conversación", key=f"rec_share_{s_id}", use_container_width=True):
+                        st.session_state["current_session_id"] = s_id
+                        st.session_state["cuaderno_activo"] = s_cuad
+                        st.session_state["messages"] = cargar_mensajes_sesion(s_id)
+                        st.session_state["loaded_session_id"] = s_id
+                        st.session_state["active_view"] = "chat"
+                        st.toast("Conversación sincronizada con la sesión activa.")
+                        st.rerun()
+
+                    # 2. Fijar / Desfijar
+                    lbl_pin = "Desfijar" if s_fij else "📌 Fijar"
+                    if st.button(lbl_pin, key=f"rec_pin_{s_id}", use_container_width=True):
+                        nuevo_st = 0 if s_fij else 1
+                        conn_p = sqlite3.connect(DB_FILE)
+                        cp = conn_p.cursor()
+                        cp.execute("UPDATE sesiones SET fijado = ? WHERE session_id = ?", (nuevo_st, s_id))
+                        conn_p.commit()
+                        conn_p.close()
+                        st.rerun()
+
+                    # 3. Cambiar nombre
+                    nom_act_rec = st.text_input("Cambiar nombre:", value=s_tit, key=f"rec_ren_txt_{s_id}")
+                    if st.button("Guardar nombre", key=f"rec_btn_ren_{s_id}", use_container_width=True):
+                        if nom_act_rec.strip() and nom_act_rec.strip() != s_tit:
+                            conn_r = sqlite3.connect(DB_FILE)
+                            cr = conn_r.cursor()
+                            cr.execute("UPDATE sesiones SET titulo = ? WHERE session_id = ?", (nom_act_rec.strip(), s_id))
+                            conn_r.commit()
+                            conn_r.close()
+                            st.rerun()
+
+                    # 4. Agregar al cuaderno (mover o crear cuaderno nuevo en el momento)
+                    st.markdown("<hr style='margin: 4px 0;'>", unsafe_allow_html=True)
+                    st.caption(f"Cuaderno actual: {s_cuad}")
+                    
+                    idx_cuad = cuadernos_disponibles.index(s_cuad) if s_cuad in cuadernos_disponibles else 0
+                    cuad_sel_mover = st.selectbox("Elegir cuaderno existente:", options=cuadernos_disponibles, index=idx_cuad, key=f"sel_c_{s_id}")
+                    if st.button("Mover a este cuaderno", key=f"btn_mv_{s_id}", use_container_width=True):
+                        conn_m = sqlite3.connect(DB_FILE)
+                        cm = conn_m.cursor()
+                        cm.execute("UPDATE sesiones SET cuaderno = ? WHERE session_id = ?", (cuad_sel_mover, s_id))
+                        conn_m.commit()
+                        conn_m.close()
+                        if st.session_state.get("current_session_id") == s_id:
+                            st.session_state["cuaderno_activo"] = cuad_sel_mover
+                        st.toast(f"Movido a '{cuad_sel_mover}'")
+                        st.rerun()
+
+                    nuevo_c_desde_hilo = st.text_input("O crear cuaderno nuevo:", placeholder="Nombre del cuaderno...", key=f"new_c_input_{s_id}")
+                    if st.button("Crear y agregar aquí", key=f"btn_crear_mv_{s_id}", use_container_width=True):
+                        if nuevo_c_desde_hilo.strip():
+                            nom_nuevo_c = nuevo_c_desde_hilo.strip()
+                            conn_nc = sqlite3.connect(DB_FILE)
+                            cnc = conn_nc.cursor()
+                            try:
+                                cnc.execute("INSERT INTO cuadernos (nombre, fijado) VALUES (?, 0)", (nom_nuevo_c,))
+                            except sqlite3.IntegrityError:
+                                pass
+                            cnc.execute("UPDATE sesiones SET cuaderno = ? WHERE session_id = ?", (nom_nuevo_c, s_id))
+                            conn_nc.commit()
+                            conn_nc.close()
+                            if st.session_state.get("current_session_id") == s_id:
+                                st.session_state["cuaderno_activo"] = nom_nuevo_c
+                            st.toast(f"Cuaderno '{nom_nuevo_c}' creado y asignado.")
+                            st.rerun()
+
+                    # 5. Borrar
+                    st.markdown("<hr style='margin: 4px 0;'>", unsafe_allow_html=True)
+                    if st.button("🗑️ Borrar", key=f"rec_del_{s_id}", use_container_width=True):
                         conn_d = sqlite3.connect(DB_FILE)
                         cd = conn_d.cursor()
                         cd.execute("DELETE FROM sesiones WHERE session_id = ?", (s_id,))
@@ -585,7 +673,7 @@ if vista == "chat":
                 </div>
             """, unsafe_allow_html=True)
         else:
-            for msg in st.session_state.get("messages", []):
+            for idx_m, msg in enumerate(st.session_state.get("messages", [])):
                 with st.chat_message(msg["role"], avatar=None):
                     if msg["role"] == "user":
                         st.markdown(f"<span style='color: #DCA48A; font-weight: 800; letter-spacing: 0.5px;'>GAIL:</span><br>{msg['content']}", unsafe_allow_html=True)
@@ -593,10 +681,46 @@ if vista == "chat":
                             st.image(f"data:image/png;base64,{msg['imagen_b64']}", width=360)
                     else:
                         st.markdown(f"<span style='color: #89CFF0; font-weight: 800; letter-spacing: 0.5px;'>{alias_display}:</span><br>{msg['content']}", unsafe_allow_html=True)
+                        
+                        # Botón seguro de reproducción de audio por respuesta
+                        texto_tts_btn = msg['content'].replace('"', '&quot;').replace('\n', ' ')[:650]
+                        es_tomas_btn = "true" if "Tomas" in voz_sel else "false"
+                        audio_btn_html = f"""
+                        <div style="margin-top: 6px;">
+                            <button onclick="
+                                if (window.speechSynthesis) {{
+                                    window.speechSynthesis.cancel();
+                                    var u = new SpeechSynthesisUtterance('{texto_tts_btn}');
+                                    u.lang = 'es-AR';
+                                    u.rate = 1.0;
+                                    u.pitch = 1.0;
+                                    var voices = window.speechSynthesis.getVoices();
+                                    var isTomas = {es_tomas_btn};
+                                    var sel = null;
+                                    if (isTomas) {{
+                                        sel = voices.find(function(v) {{
+                                            var n = v.name.toLowerCase();
+                                            return (n.indexOf('tomas') !== -1 || n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1) && n.indexOf('female') === -1;
+                                        }});
+                                    }} else {{
+                                        sel = voices.find(function(v) {{
+                                            var n = v.name.toLowerCase();
+                                            return (n.indexOf('elena') !== -1 || n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1 || n.indexOf('sabina') !== -1);
+                                        }});
+                                    }}
+                                    if (sel) u.voice = sel;
+                                    window.speechSynthesis.speak(u);
+                                }}
+                            " style="background-color: transparent; border: 1px solid rgba(137,207,240,0.4); color: #89CFF0; border-radius: 4px; padding: 3px 8px; font-size: 0.75rem; cursor: pointer; font-weight: 600;">
+                                🔊 Escuchar explicación
+                            </button>
+                        </div>
+                        """
+                        components.html(audio_btn_html, height=36)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Captura controlada: formulario con reseteo inmediato para erradicar el doble envío
+    # Formulario atómico con reseteo inmediato para erradicar el doble envío
     with st.form(key="form_chat_gail", clear_on_submit=True):
         col_inp, col_send, col_live, col_sel = st.columns([0.62, 0.06, 0.18, 0.14])
 
@@ -678,6 +802,8 @@ if vista == "chat":
 
                     if (window.speechSynthesis) {{
                         window.speechSynthesis.onvoiceschanged = function() {{ getBestVoice(); }};
+                        // Dispara carga preliminar en memoria
+                        window.speechSynthesis.getVoices();
                     }}
 
                     function startSR(callback) {{
@@ -749,7 +875,7 @@ if vista == "chat":
         st.session_state["dispatch_payload"] = texto_ingresado.strip()
         st.rerun()
 
-    # Procesamiento del mensaje despachado (ejecución única, sin duplicación)
+    # Procesamiento controlado con ejecución unívoca
     if st.session_state.get("dispatch_payload"):
         prompt = st.session_state.pop("dispatch_payload")
         act_cuad_save = st.session_state.get("cuaderno_activo", "General")
@@ -773,9 +899,9 @@ if vista == "chat":
             client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
             
             contexto_turno = (
-                "CONTEXTO DEL HILO: Este es el PRIMER mensaje del hilo. Saluda brevemente a Gail sin explicar tus funciones." 
+                "CONTEXTO DEL HILO: Este es el PRIMER mensaje del hilo. Saluda brevemente a Gail sin explicar tus funciones ni currículum." 
                 if es_primer_turno else 
-                "CONTEXTO DEL HILO: La conversación ya está en curso. NO saludes a Gail, no uses fórmulas de apertura, responde directamente al grano."
+                "CONTEXTO DEL HILO: La conversación ya está en curso. NO saludes a Gail, no uses fórmulas de apertura, responde directamente al grano con el Sí o No categórico y la fundamentación."
             )
             system_prompt = f"{PROMPTS_CHRONN[st.session_state.modo_operativo]}\nCuaderno de estudio activo: '{act_cuad_save}'.\n{contexto_turno}"
 
@@ -819,16 +945,19 @@ if vista == "chat":
         guardar_mensaje_db(sess_id, "assistant", respuesta_completa, act_cuad_save)
         st.session_state["messages"].append({"role": "assistant", "content": respuesta_completa})
 
+        # Emisión de voz directa y asíncrona
         if respuesta_completa:
             texto_tts = respuesta_completa.replace('"', '\\"').replace('\n', ' ').replace('\r', '')[:650]
             es_tomas_js = str("Tomas" in voz_sel).lower()
             tts_script = f"""
             <script>
-                if (window.speechSynthesis) {{
+                function reproducirExplicacion() {{
+                    if (!window.speechSynthesis) return;
                     window.speechSynthesis.cancel();
+                    
                     var u = new SpeechSynthesisUtterance("{texto_tts}");
                     u.lang = 'es-AR';
-                    u.rate = 0.98;
+                    u.rate = 1.0;
                     u.pitch = 1.0;
 
                     var voices = window.speechSynthesis.getVoices();
@@ -837,7 +966,7 @@ if vista == "chat":
                     if (isTomas) {{
                         selVoice = voices.find(function(v) {{
                             var n = v.name.toLowerCase();
-                            return (n.indexOf('tomas') !== -1 || n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1) && n.indexOf('female') === -1;
+                            return (n.indexOf('tomas') !== -1 || n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1 || n.indexOf('argentina') !== -1) && n.indexOf('female') === -1 && n.indexOf('elena') === -1;
                         }});
                     }} else {{
                         selVoice = voices.find(function(v) {{
@@ -847,6 +976,12 @@ if vista == "chat":
                     }}
                     if (selVoice) u.voice = selVoice;
                     window.speechSynthesis.speak(u);
+                }}
+
+                if (window.speechSynthesis.getVoices().length === 0) {{
+                    window.speechSynthesis.onvoiceschanged = reproducirExplicacion;
+                }} else {{
+                    reproducirExplicacion();
                 }}
             </script>
             """
@@ -961,7 +1096,7 @@ elif vista == "ver_cuaderno":
         st.rerun()
 
 # ==============================================================
-# VISTA: TODOS LOS CUADERNOS (CON MENÚ DE ACCIÓN DIRECTA)
+# VISTA: TODOS LOS CUADERNOS
 # ==============================================================
 elif vista == "todos_los_cuadernos":
     st.markdown('<div class="cinzel-title" style="font-size:1.5rem;">TODOS LOS CUADERNOS DE ESTUDIO</div>', unsafe_allow_html=True)
