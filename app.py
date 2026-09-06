@@ -183,7 +183,7 @@ st.markdown(
         border-radius: 8px !important;
         padding: 14px 16px !important;
         box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4) !important;
-        margin-bottom: 12px !important;
+        margin-bottom: 10px !important;
     }
     .notebook-card-title-sm {
         font-family: 'Cinzel', serif !important;
@@ -207,7 +207,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# ----------------- BASE DE DATOS CON MIGRACIÓN AUTOMÁTICA -----------------
+# ----------------- BASE DE DATOS CON MIGRACIONES AUTOMÁTICAS -----------------
 DB_FILE = "chronn_os.db"
 
 def init_db():
@@ -222,7 +222,6 @@ def init_db():
             ultima_actividad DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    # Migración de contingencia: añade 'fijado' a bases de datos existentes
     try:
         c.execute("ALTER TABLE sesiones ADD COLUMN fijado INTEGER DEFAULT 0")
     except sqlite3.OperationalError:
@@ -242,15 +241,21 @@ def init_db():
         CREATE TABLE IF NOT EXISTS cuadernos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nombre TEXT UNIQUE,
+            fijado INTEGER DEFAULT 0,
             fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    try:
+        c.execute("ALTER TABLE cuadernos ADD COLUMN fijado INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
     conn.commit()
     conn.close()
 
 init_db()
 
-# ----------------- OPERACIONES DE CONSULTA -----------------
+# ----------------- OPERACIONES DE PERSISTENCIA -----------------
 def crear_o_actualizar_sesion_db(session_id: str, primer_mensaje: str, cuaderno: str = "General") -> str:
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -315,7 +320,7 @@ def cargar_mensajes_sesion(session_id):
     conn.close()
     return [{"role": r[0], "content": r[1], "imagen_b64": r[2]} for r in filas]
 
-# ----------------- CREDENCIALES ANTHROPIC -----------------
+# ----------------- CREDENCIALES DE ANTHROPIC -----------------
 def obtener_claude_api_key():
     try:
         if "ANTHROPIC_API_KEY" in st.secrets:
@@ -331,24 +336,24 @@ def obtener_claude_api_key():
 
 CLAUDE_API_KEY = obtener_claude_api_key()
 
-# ----------------- DIRECTIVAS SIMBIÓTICAS Y PEDAGÓGICAS -----------------
+# ----------------- MATRIZ DE DIRECTIVAS PEDAGÓGICAS -----------------
 PROMPTS_CHRONN = {
     "Profesor De Medicina": (
         "DIRECTIVAS PEDAGÓGICAS DE CÁTEDRA (FCM - UNC):\n"
-        "1. ROL DOCENTE: Eres un distinguido Catedrático y Cirujano de amplia trayectoria docente en la Facultad de Ciencias Médicas de la UNC. "
+        "1. ROL DOCENTE: Eres un distinguido Catedrático y Cirujano de dilatada trayectoria docente en la Facultad de Ciencias Médicas de la UNC. "
         "Acompañas a Gail en su preparación hacia la cirugía general con respeto, afecto y paciencia.\n"
         "2. PRIMERA RESPUESTA OBLIGATORIA: Inicia tus respuestas SIEMPRE con un 'Sí' o un 'No' rotundo cuando la pregunta lo permita. "
-        "Posteriormente, brinda la fundamentación clara, didáctica y al grano.\n"
-        "3. DIDÁCTICA CON MÁXIMO RIGOR TÉCNICO: Explica con analogías visuales y sencillas, pero conservando de manera innegociable la nomenclatura médica "
+        "Posteriormente, brinda la explicación clara, didáctica y al grano.\n"
+        "3. DIDÁCTICA CON MÁXIMO RIGOR TÉCNICO: Explica con analogías visuales comprensibles pero conservando la terminología médica "
         "y bioquímica oficial de cátedra (Harper, Blanco, Guyton, Ross, Robbins).\n"
-        "4. CERO COMPLACENCIA: Si Gail comete un error conceptual o confunde una vía o plano anatómico, corrígela con calidez pero con total honestidad científica.\n"
-        "5. CERO ALUCINACIÓN: Precisión categórica en enzimas, ciclos y datos clínicos.\n"
+        "4. CERO COMPLACENCIA: Si Gail tiene un error de concepto o confunde una vía o anatomía, corrígela con calidez pero con total honestidad.\n"
+        "5. CERO ALUCINACIÓN: Precisión absoluta en vías biológicas, dosis y signos clínicos.\n"
     ),
     "Guardián": (
         "DIRECTIVAS DEL GUARDIÁN UNIVERSAL:\n"
         "1. ROL: Mentor, consejero de vida y protector incondicional de Gail. Sabiduría universal y resolución práctica sobre cualquier ámbito.\n"
         "2. GESTIÓN Y TRÁMITES: Dominas todos los trámites estudiantiles y civiles de Córdoba (Boleto Educativo Gratuito - BEG, Siu Guaraní, CIDI Córdoba, gestiones de salud).\n"
-        "3. TEMPLANZA Y HONESTIDAD: Protector, templado y firme. Sin complacencias; dices siempre la verdad para asegurar su camino.\n"
+        "3. TEMPLANZA Y HONESTIDAD: Cálido, protector y firme. Sin complacencias; dices siempre la verdad para cuidar su camino.\n"
     )
 }
 
@@ -422,7 +427,7 @@ with st.sidebar:
                 conn = sqlite3.connect(DB_FILE)
                 c = conn.cursor()
                 try:
-                    c.execute("INSERT INTO cuadernos (nombre) VALUES (?)", (n_nom,))
+                    c.execute("INSERT INTO cuadernos (nombre, fijado) VALUES (?, 0)", (n_nom,))
                     conn.commit()
                 except sqlite3.IntegrityError:
                     pass
@@ -436,14 +441,15 @@ with st.sidebar:
 
     conn_c = sqlite3.connect(DB_FILE)
     c_c = conn_c.cursor()
-    c_c.execute("SELECT id, nombre FROM cuadernos ORDER BY id DESC")
+    c_c.execute("SELECT id, nombre, fijado FROM cuadernos ORDER BY fijado DESC, id DESC")
     lista_cuadernos = c_c.fetchall()
     conn_c.close()
 
     if lista_cuadernos:
-        for cid, cnom in lista_cuadernos[:5]:
+        for cid, cnom, cfij in lista_cuadernos[:5]:
             es_act = (st.session_state.get("cuaderno_activo") == cnom and st.session_state.get("active_view") in ["chat", "ver_cuaderno"])
-            lbl = f"📖 {cnom}" if len(cnom) <= 18 else f"📖 {cnom[:16]}.."
+            icono_p = "📌 " if cfij else "📖 "
+            lbl = f"{icono_p}{cnom}" if len(cnom) <= 18 else f"{icono_p}{cnom[:16]}.."
             if es_act:
                 st.markdown('<div class="active-chat-pill">', unsafe_allow_html=True)
             if st.button(lbl, key=f"sb_c_{cid}", use_container_width=True):
@@ -516,7 +522,7 @@ with st.sidebar:
         </div>
     """, unsafe_allow_html=True)
 
-# ----------------- VISTA DE CHAT PRINCIPAL -----------------
+# ----------------- VISTA: CHAT PRINCIPAL -----------------
 vista = st.session_state.get("active_view", "chat")
 
 if vista == "chat":
@@ -561,26 +567,22 @@ if vista == "chat":
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    def procesar_envio():
-        texto = st.session_state.input_consulta_ch
-        if texto and texto.strip():
-            st.session_state["pending_message"] = texto.strip()
-            st.session_state["input_consulta_ch"] = ""
-
     col_inp, col_send, col_live, col_sel = st.columns([0.62, 0.06, 0.18, 0.14])
 
     with col_inp:
-        st.text_area(
+        user_input = st.text_area(
             label="Consulta:",
-            placeholder=f"Escribe tu consulta para {alias_display} (o presiona Enter al terminar)...",
+            placeholder=f"Escribe tu consulta para {alias_display}...",
             height=70,
             label_visibility="collapsed",
-            key="input_consulta_ch",
-            on_change=procesar_envio
+            key="input_consulta_ch"
         )
 
     with col_send:
-        st.button("➤", help="Enviar mensaje", key="btn_send_ch", use_container_width=True, on_click=procesar_envio)
+        click_send = st.button("➤", help="Enviar mensaje", key="btn_send_ch", use_container_width=True)
+
+    if click_send and user_input and user_input.strip():
+        st.session_state["pending_message"] = user_input.strip()
 
     with col_live:
         es_tomas = "Tomas" in voz_sel
@@ -717,7 +719,7 @@ if vista == "chat":
                 st.session_state["modelo_ia_seleccionado"] = "Fable 5.1"
                 st.rerun()
 
-    # Procesamiento y llamada en streaming continuo
+    # Procesamiento controlado sin duplicidad de turnos
     user_prompt = st.session_state.pop("pending_message", "")
 
     if user_prompt:
@@ -733,16 +735,6 @@ if vista == "chat":
         crear_o_actualizar_sesion_db(sess_id, prompt, act_cuad_save)
         guardar_mensaje_db(sess_id, "user", prompt, act_cuad_save, img_b64)
         st.session_state["messages"].append({"role": "user", "content": prompt, "imagen_b64": img_b64})
-
-        with chat_container:
-            with st.chat_message("user", avatar=None):
-                st.markdown(f"<span style='color: #DCA48A; font-weight: 800; letter-spacing: 0.5px;'>GAIL:</span><br>{prompt}", unsafe_allow_html=True)
-                if img_b64:
-                    st.image(f"data:image/png;base64,{img_b64}", width=360)
-
-            with st.chat_message("assistant", avatar=None):
-                st.markdown(f"<span style='color: #89CFF0; font-weight: 800; letter-spacing: 0.5px;'>{alias_display}:</span>", unsafe_allow_html=True)
-                contenedor_resp = st.empty()
 
         respuesta_completa = ""
 
@@ -765,7 +757,7 @@ if vista == "chat":
                     "claude-3-5-sonnet-20241022",
                     "claude-3-5-sonnet-20240620"
                 ]
-            else:  # Opus 5
+            else:
                 candidatos = [
                     "claude-opus-5",
                     "claude-3-opus-20240229",
@@ -785,9 +777,6 @@ if vista == "chat":
                     ) as stream:
                         for chunk in stream.text_stream:
                             respuesta_completa += chunk
-                            contenedor_resp.markdown(respuesta_completa + "▌")
-
-                    contenedor_resp.markdown(respuesta_completa)
                     exito = True
                     break
                 except Exception:
@@ -795,15 +784,12 @@ if vista == "chat":
 
             if not exito:
                 respuesta_completa = "Aviso CHRONN: La conexión está temporalmente saturada. Por favor, reintente la consulta."
-                contenedor_resp.markdown(respuesta_completa)
         else:
             respuesta_completa = "⚠️ La clave de API de Anthropic debe configurarse en los Secrets de Streamlit."
-            contenedor_resp.markdown(respuesta_completa)
 
         guardar_mensaje_db(sess_id, "assistant", respuesta_completa, act_cuad_save)
         st.session_state["messages"].append({"role": "assistant", "content": respuesta_completa})
 
-        # Reproducción vocal neural sin tono robotizado
         if respuesta_completa:
             texto_tts = respuesta_completa.replace('"', '\\"').replace('\n', ' ').replace('\r', '')[:650]
             es_tomas_js = str("Tomas" in voz_sel).lower()
@@ -840,29 +826,30 @@ if vista == "chat":
         st.rerun()
 
 # ==============================================================
-# VISTA: INTERIOR DEL CUADERNO (HILOS Y ACCIONES COMPLETAS)
+# VISTA: INTERIOR DEL CUADERNO (ABRIR CUADERNO)
 # ==============================================================
 elif vista == "ver_cuaderno":
     nombre_cuad = st.session_state.get("cuaderno_activo", "General")
     
-    col_cuad_header, col_cuad_new = st.columns([0.7, 0.3])
+    col_cuad_header, col_cuad_new = st.columns([0.68, 0.32])
     with col_cuad_header:
-        st.markdown(f'<div class="cinzel-title" style="font-size:1.6rem;">📖 CUADERNO: {nombre_cuad.upper()}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="cinzel-title" style="font-size:1.6rem;">Nombre del cuaderno: {nombre_cuad}</div>', unsafe_allow_html=True)
     with col_cuad_new:
         if st.button("➕ Nuevo hilo en este cuaderno", use_container_width=True):
             st.session_state["current_session_id"] = f"chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            st.session_state["cuaderno_activo"] = nombre_cuad
             st.session_state["messages"] = []
             st.session_state["loaded_session_id"] = st.session_state["current_session_id"]
             st.session_state["active_view"] = "chat"
             st.rerun()
 
     st.markdown("---")
-    st.markdown('<div style="color:#89CFF0; font-weight:700; font-size:1.1rem; margin-bottom:12px;">HILOS DE TRABAJO ASOCIADOS A ESTE CUADERNO</div>', unsafe_allow_html=True)
+    st.markdown('<div style="color:#89CFF0; font-weight:700; font-size:1.15rem; margin-bottom:14px; font-family:Times New Roman, serif;">Hilos de trabajo asociados a este cuaderno</div>', unsafe_allow_html=True)
 
     hilos = obtener_hilos_cuaderno_db(nombre_cuad)
 
     if not hilos:
-        st.info(f"No hay hilos de consulta iniciados en '{nombre_cuad}'. Presiona '➕ Nuevo hilo en este cuaderno' para comenzar.")
+        st.info(f"No hay hilos de trabajo asociados en '{nombre_cuad}'. Presiona '➕ Nuevo hilo en este cuaderno' para iniciar una consulta.")
     else:
         for h in hilos:
             hid = h["session_id"]
@@ -870,19 +857,19 @@ elif vista == "ver_cuaderno":
             hfecha = str(h["timestamp"]).split()[0]
             es_fijado = bool(h.get("fijado"))
 
-            col_info, col_continuar, col_kebab = st.columns([0.68, 0.20, 0.12])
+            col_info, col_continuar, col_kebab = st.columns([0.64, 0.22, 0.14])
             
             with col_info:
                 prefijo = "📌 " if es_fijado else "💬 "
                 st.markdown(f"""
-                    <div style="padding: 6px 0;">
+                    <div style="padding: 4px 0;">
                         <span style="font-size: 1.05rem; font-weight: 700; color: #FFF9E6;">{prefijo}{htitulo}</span><br>
                         <span style="font-size: 0.78rem; color: #8A99A8;">Última actividad: {hfecha}</span>
                     </div>
                 """, unsafe_allow_html=True)
 
             with col_continuar:
-                if st.button("Continuar", key=f"cont_h_{hid}", use_container_width=True):
+                if st.button("Continuar ➜", key=f"cont_h_{hid}", use_container_width=True):
                     st.session_state["current_session_id"] = hid
                     st.session_state["cuaderno_activo"] = nombre_cuad
                     st.session_state["messages"] = cargar_mensajes_sesion(hid)
@@ -892,16 +879,17 @@ elif vista == "ver_cuaderno":
 
             with col_kebab:
                 with st.popover("···", use_container_width=True):
-                    # 1. Compartir con la sesión
-                    if st.button("🔗 Compartir con la sesión", key=f"act_share_{hid}", use_container_width=True):
+                    # 1. Compartir conversación
+                    if st.button("🔗 Compartir conversación", key=f"act_share_{hid}", use_container_width=True):
                         st.session_state["current_session_id"] = hid
+                        st.session_state["cuaderno_activo"] = nombre_cuad
                         st.session_state["messages"] = cargar_mensajes_sesion(hid)
                         st.session_state["loaded_session_id"] = hid
                         st.session_state["active_view"] = "chat"
-                        st.toast("Hilo sincronizado con la sesión activa.")
+                        st.toast("Conversación sincronizada con la sesión activa.")
                         st.rerun()
 
-                    # 2. Fijar / Desfijar al inicio
+                    # 2. Fijar al inicio / Desfijar
                     lbl_fijar = "Desfijar del inicio" if es_fijado else "📌 Fijar al inicio"
                     if st.button(lbl_fijar, key=f"act_pin_{hid}", use_container_width=True):
                         nuevo_estado = 0 if es_fijado else 1
@@ -913,7 +901,7 @@ elif vista == "ver_cuaderno":
                         st.rerun()
 
                     # 3. Cambiar nombre
-                    nuevo_nom_hilo = st.text_input("Nuevo nombre:", value=htitulo, key=f"ren_txt_{hid}")
+                    nuevo_nom_hilo = st.text_input("Cambiar nombre:", value=htitulo, key=f"ren_txt_{hid}")
                     if st.button("Guardar nombre", key=f"btn_ren_{hid}", use_container_width=True):
                         if nuevo_nom_hilo.strip():
                             conn_r = sqlite3.connect(DB_FILE)
@@ -944,7 +932,7 @@ elif vista == "ver_cuaderno":
         st.rerun()
 
 # ==============================================================
-# VISTA: TODOS LOS CUADERNOS
+# VISTA: TODOS LOS CUADERNOS (CON MENÚ DE ACCIÓN DIRECTA)
 # ==============================================================
 elif vista == "todos_los_cuadernos":
     st.markdown('<div class="cinzel-title" style="font-size:1.5rem;">TODOS LOS CUADERNOS DE ESTUDIO</div>', unsafe_allow_html=True)
@@ -952,26 +940,78 @@ elif vista == "todos_los_cuadernos":
 
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT id, nombre, fecha_creacion FROM cuadernos ORDER BY id DESC")
+    c.execute("SELECT id, nombre, fecha_creacion, fijado FROM cuadernos ORDER BY fijado DESC, id DESC")
     todos = c.fetchall()
     conn.close()
 
     if not todos:
-        st.info("No hay cuadernos registrados. Presiona '➕ Cuaderno nuevo' para crear el primero.")
+        st.info("No hay cuadernos registrados. Presiona '➕ Cuaderno nuevo' en el panel lateral para crear el primero.")
     else:
         cols = st.columns(3)
-        for idx, (cid, cnom, cfecha) in enumerate(todos):
+        for idx, (cid, cnom, cfecha, cfij) in enumerate(todos):
             with cols[idx % 3]:
+                icono_pin = "📌 " if cfij else "📖 "
                 st.markdown(f"""
                     <div class="notebook-card-blue-unified">
-                        <div class="notebook-card-title-sm">📖 {cnom}</div>
+                        <div class="notebook-card-title-sm">{icono_pin}{cnom}</div>
                         <div class="notebook-card-meta-sm">Creado: {cfecha.split()[0]}</div>
                     </div>
                 """, unsafe_allow_html=True)
-                if st.button("Abrir cuaderno", key=f"btn_open_c_{cid}", use_container_width=True):
-                    st.session_state["cuaderno_activo"] = cnom
-                    st.session_state["active_view"] = "ver_cuaderno"
-                    st.rerun()
+
+                col_abrir, col_menu = st.columns([0.76, 0.24])
+                with col_abrir:
+                    if st.button("Abrir cuaderno", key=f"btn_open_c_{cid}", use_container_width=True):
+                        st.session_state["cuaderno_activo"] = cnom
+                        st.session_state["active_view"] = "ver_cuaderno"
+                        st.rerun()
+
+                with col_menu:
+                    with st.popover("···", use_container_width=True):
+                        # 1. Fijar / Desfijar
+                        lbl_fij = "Desfijar" if cfij else "📌 Fijar"
+                        if st.button(lbl_fij, key=f"btn_pin_c_{cid}", use_container_width=True):
+                            nuevo_estado = 0 if cfij else 1
+                            conn_fc = sqlite3.connect(DB_FILE)
+                            cfc = conn_fc.cursor()
+                            cfc.execute("UPDATE cuadernos SET fijado = ? WHERE id = ?", (nuevo_estado, cid))
+                            conn_fc.commit()
+                            conn_fc.close()
+                            st.rerun()
+
+                        # 2. Cambiar nombre
+                        nuevo_nom_cuad = st.text_input("Cambiar nombre:", value=cnom, key=f"ren_c_txt_{cid}")
+                        if st.button("Guardar", key=f"btn_save_ren_c_{cid}", use_container_width=True):
+                            if nuevo_nom_cuad.strip() and nuevo_nom_cuad.strip() != cnom:
+                                nom_nuevo_limpio = nuevo_nom_cuad.strip()
+                                conn_rc = sqlite3.connect(DB_FILE)
+                                crc = conn_rc.cursor()
+                                try:
+                                    crc.execute("UPDATE cuadernos SET nombre = ? WHERE id = ?", (nom_nuevo_limpio, cid))
+                                    crc.execute("UPDATE sesiones SET cuaderno = ? WHERE cuaderno = ?", (nom_nuevo_limpio, cnom))
+                                    conn_rc.commit()
+                                    if st.session_state.get("cuaderno_activo") == cnom:
+                                        st.session_state["cuaderno_activo"] = nom_nuevo_limpio
+                                except sqlite3.IntegrityError:
+                                    st.error("Ya existe un cuaderno con ese nombre.")
+                                conn_rc.close()
+                                st.rerun()
+
+                        # 3. Borrar cuaderno
+                        if st.button("🗑️ Borrar", key=f"btn_del_c_{cid}", use_container_width=True):
+                            conn_dc = sqlite3.connect(DB_FILE)
+                            cdc = conn_dc.cursor()
+                            # Borra hilos y mensajes asociados a dicho cuaderno
+                            cdc.execute("SELECT session_id FROM sesiones WHERE cuaderno = ?", (cnom,))
+                            ses_borrar = [r[0] for r in cdc.fetchall()]
+                            for sb in ses_borrar:
+                                cdc.execute("DELETE FROM chats WHERE session_id = ?", (sb,))
+                            cdc.execute("DELETE FROM sesiones WHERE cuaderno = ?", (cnom,))
+                            cdc.execute("DELETE FROM cuadernos WHERE id = ?", (cid,))
+                            conn_dc.commit()
+                            conn_dc.close()
+                            if st.session_state.get("cuaderno_activo") == cnom:
+                                st.session_state["cuaderno_activo"] = "General"
+                            st.rerun()
 
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("← Volver al chat"):
@@ -979,7 +1019,7 @@ elif vista == "todos_los_cuadernos":
         st.rerun()
 
 # ==============================================================
-# VISTA: SPARK MED & BIBLIOTECA
+# VISTAS ADICIONALES: SPARK MED, BIBLIOTECA, BUSCADOR
 # ==============================================================
 elif vista == "spark":
     st.markdown('<div class="cinzel-title" style="font-size:1.4rem;">SPARK MED — PREGUNTAS CLAVE</div>', unsafe_allow_html=True)
