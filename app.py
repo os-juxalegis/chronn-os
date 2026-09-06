@@ -6,6 +6,7 @@ import streamlit as st
 import os
 import sqlite3
 import base64
+import asyncio
 from datetime import datetime
 import streamlit.components.v1 as components
 
@@ -13,6 +14,11 @@ try:
     import anthropic
 except ImportError:
     anthropic = None
+
+try:
+    import edge_tts
+except ImportError:
+    edge_tts = None
 
 # ----------------- CONFIGURACIÓN GENERAL -----------------
 st.set_page_config(
@@ -224,6 +230,13 @@ st.markdown(
         background: transparent !important;
     }
 
+    /* Estilo del reproductor de audio neural integrado */
+    audio {
+        height: 32px;
+        margin-top: 4px;
+        filter: drop-shadow(0 2px 6px rgba(0,0,0,0.5));
+    }
+
     @keyframes fadeIn {
         from { opacity: 0; transform: translateY(6px); }
         to { opacity: 1; transform: translateY(0); }
@@ -260,9 +273,15 @@ def init_db():
             role TEXT,
             content TEXT,
             imagen_b64 TEXT,
+            audio_b64 TEXT,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    try:
+        c.execute("ALTER TABLE chats ADD COLUMN audio_b64 TEXT")
+    except sqlite3.OperationalError:
+        pass
+
     c.execute('''
         CREATE TABLE IF NOT EXISTS cuadernos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -291,6 +310,36 @@ def init_db():
 
 init_db()
 
+# ----------------- MOTOR DE AUDIO NEURAL HUMANO (EDGE-TTS) -----------------
+async def sintetizar_voz_neural_async(texto: str, nombre_voz: str) -> str:
+    """Genera audio neural auténtico rioplatense en MP3 y devuelve base64"""
+    if not edge_tts or not texto.strip():
+        return None
+    try:
+        voz_cod = "es-AR-TomasNeural" if "Tomas" in nombre_voz else "es-AR-ElenaNeural"
+        # Limpieza de fragmento para síntesis óptima
+        texto_limpio = texto.replace("*", "").replace("#", "").replace("`", "")[:750]
+        communicate = edge_tts.Communicate(texto_limpio, voz_cod, rate="-2%", pitch="+0Hz")
+        audio_data = bytearray()
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_data.extend(chunk["data"])
+        if audio_data:
+            return base64.b64encode(bytes(audio_data)).decode("utf-8")
+    except Exception:
+        pass
+    return None
+
+def generar_audio_neural(texto: str, nombre_voz: str) -> str:
+    try:
+        return asyncio.run(sintetizar_voz_neural_async(texto, nombre_voz))
+    except Exception:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        res = loop.run_until_complete(sintetizar_voz_neural_async(texto, nombre_voz))
+        loop.close()
+        return res
+
 # ----------------- OPERACIONES DE BASE DE DATOS -----------------
 def crear_o_actualizar_sesion_db(session_id: str, primer_mensaje: str, cuaderno: str = "General") -> str:
     conn = sqlite3.connect(DB_FILE)
@@ -313,12 +362,12 @@ def crear_o_actualizar_sesion_db(session_id: str, primer_mensaje: str, cuaderno:
     conn.close()
     return titulo_final
 
-def guardar_mensaje_db(session_id: str, role: str, content: str, cuaderno: str = "General", imagen_b64: str = None):
+def guardar_mensaje_db(session_id: str, role: str, content: str, cuaderno: str = "General", imagen_b64: str = None, audio_b64: str = None):
     crear_o_actualizar_sesion_db(session_id, content if role == "user" else "Nueva consulta", cuaderno)
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute('INSERT INTO chats (session_id, role, content, imagen_b64) VALUES (?, ?, ?, ?)', 
-              (session_id, role, content, imagen_b64))
+    c.execute('INSERT INTO chats (session_id, role, content, imagen_b64, audio_b64) VALUES (?, ?, ?, ?, ?)', 
+              (session_id, role, content, imagen_b64, audio_b64))
     conn.commit()
     conn.close()
 
@@ -351,10 +400,10 @@ def obtener_hilos_cuaderno_db(nombre_cuaderno: str):
 def cargar_mensajes_sesion(session_id):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute('SELECT role, content, imagen_b64 FROM chats WHERE session_id = ? ORDER BY id ASC', (session_id,))
+    c.execute('SELECT role, content, imagen_b64, audio_b64 FROM chats WHERE session_id = ? ORDER BY id ASC', (session_id,))
     filas = c.fetchall()
     conn.close()
-    return [{"role": r[0], "content": r[1], "imagen_b64": r[2]} for r in filas]
+    return [{"role": r[0], "content": r[1], "imagen_b64": r[2], "audio_b64": r[3]} for r in filas]
 
 def obtener_todos_los_cuadernos_nombres():
     conn = sqlite3.connect(DB_FILE)
@@ -652,7 +701,7 @@ with st.sidebar:
     modos_disp = list(PROMPTS_CHRONN.keys())
     st.session_state.modo_operativo = st.selectbox("Modo Operativo:", options=modos_disp, index=0)
     alias_chronn = st.text_input("Identidad de la IA:", value="CHRONN")
-    opciones_voces = ["Tomas (Argentina - Neural Natural)", "Mujer (Elena - Argentina Neural)"]
+    opciones_voces = ["Tomas (Argentina - Neural Natural)", "Elena (Argentina - Neural Natural)"]
     voz_sel = st.selectbox("Síntesis de voz:", options=opciones_voces, index=0)
 
     st.markdown("""
@@ -708,52 +757,10 @@ if vista == "chat":
                     else:
                         st.markdown(f"<span style='color: #89CFF0; font-weight: 800; letter-spacing: 0.5px;'>{alias_display}:</span><br>{msg['content']}", unsafe_allow_html=True)
                         
-                        texto_tts_btn = msg['content'].replace('"', '&quot;').replace('\n', ' ')[:650]
-                        es_tomas_btn = "true" if "Tomas" in voz_sel else "false"
-                        audio_btn_html = f"""
-                        <div style="margin-top: 6px;">
-                            <button onclick="
-                                if (window.speechSynthesis) {{
-                                    window.speechSynthesis.cancel();
-                                    var u = new SpeechSynthesisUtterance('{texto_tts_btn}');
-                                    u.lang = 'es-AR';
-                                    u.rate = 0.96;
-                                    u.pitch = 1.0;
-                                    
-                                    function seleccionarVozHumana(voices) {{
-                                        var isTomas = {es_tomas_btn};
-                                        var target = null;
-                                        if (isTomas) {{
-                                            target = voices.find(function(v) {{
-                                                var n = v.name.toLowerCase();
-                                                return (n.indexOf('tomas') !== -1 || n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1) && n.indexOf('female') === -1 && (v.lang.indexOf('es-AR') !== -1 || v.lang.indexOf('es') !== -1);
-                                            }});
-                                            if (!target) {{
-                                                target = voices.find(function(v) {{
-                                                    var n = v.name.toLowerCase();
-                                                    return (v.lang.indexOf('es-AR') !== -1 || v.lang.indexOf('es') !== -1) && n.indexOf('female') === -1 && n.indexOf('elena') === -1 && n.indexOf('sabina') === -1;
-                                                }});
-                                            }}
-                                        }} else {{
-                                            target = voices.find(function(v) {{
-                                                var n = v.name.toLowerCase();
-                                                return (n.indexOf('elena') !== -1 || n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1) && (v.lang.indexOf('es-AR') !== -1 || v.lang.indexOf('es') !== -1);
-                                            }});
-                                        }}
-                                        return target;
-                                    }}
-
-                                    var vcs = window.speechSynthesis.getVoices();
-                                    var sel = seleccionarVozHumana(vcs);
-                                    if (sel) u.voice = sel;
-                                    window.speechSynthesis.speak(u);
-                                }}
-                            " style="background-color: transparent; border: 1px solid rgba(137,207,240,0.4); color: #89CFF0; border-radius: 4px; padding: 3px 8px; font-size: 0.75rem; cursor: pointer; font-weight: 600;">
-                                🔊 Escuchar explicación
-                            </button>
-                        </div>
-                        """
-                        components.html(audio_btn_html, height=36)
+                        # Reproductor neural de alta fidelidad si posee audio generado
+                        if msg.get("audio_b64"):
+                            audio_bytes = base64.b64decode(msg["audio_b64"])
+                            st.audio(audio_bytes, format="audio/mp3")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -774,14 +781,13 @@ if vista == "chat":
             submit_pressed = st.form_submit_button("➤", help="Enviar mensaje (o presiona Enter)", use_container_width=True)
 
         with col_live:
-            es_tomas = "Tomas" in voz_sel
-            dock_html = f"""
+            dock_html = """
             <!DOCTYPE html>
             <html>
             <head>
             <style>
-                body {{ margin: 0; padding: 0; display: flex; gap: 6px; background: transparent; }}
-                .btn {{
+                body { margin: 0; padding: 0; display: flex; gap: 6px; background: transparent; }
+                .btn {
                     flex: 1;
                     background-color: #242D33;
                     color: #E1E6EB;
@@ -795,140 +801,106 @@ if vista == "chat":
                     font-size: 1rem;
                     font-weight: 600;
                     transition: all 0.2s;
-                }}
-                .btn:hover {{ background-color: #89CFF0; color: #161B1E; }}
-                .rec {{ background-color: #ef4444 !important; color: white !important; border-color: #ef4444 !important; }}
-                .live {{ background-color: #10b981 !important; color: white !important; border-color: #10b981 !important; }}
+                }
+                .btn:hover { background-color: #89CFF0; color: #161B1E; }
+                .rec { background-color: #ef4444 !important; color: white !important; border-color: #ef4444 !important; }
+                .live { background-color: #10b981 !important; color: white !important; border-color: #10b981 !important; }
             </style>
             </head>
             <body>
                 <button type="button" id="btnMic" class="btn" title="Micrófono">🎙️</button>
                 <button type="button" id="btnVivo" class="btn" title="Modo En Vivo">🟢 Vivo</button>
-                <button type="button" id="btnSilenciar" class="btn" title="Silenciar explicación">⏹</button>
+                <button type="button" id="btnSilenciar" class="btn" title="Pausar audios">⏹</button>
 
                 <script>
                     var rec = null;
                     var vivoActivo = false;
-                    var esTomas = {str(es_tomas).lower()};
 
-                    function stopSpeech() {{
-                        if (window.speechSynthesis) window.speechSynthesis.cancel();
-                    }}
-                    document.getElementById('btnSilenciar').onclick = stopSpeech;
+                    document.getElementById('btnSilenciar').onclick = function() {
+                        var audios = window.parent.document.querySelectorAll('audio');
+                        for (var a of audios) { a.pause(); a.currentTime = 0; }
+                    };
 
-                    function getBestVoice() {{
-                        if (!window.speechSynthesis) return null;
-                        var voices = window.speechSynthesis.getVoices();
-                        var filtered = voices.filter(function(v) {{ return v.lang.indexOf('es') !== -1; }});
-                        
-                        if (esTomas) {{
-                            var match = filtered.find(function(v) {{ 
-                                var n = v.name.toLowerCase();
-                                return (n.indexOf('tomas') !== -1 || n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1) && n.indexOf('female') === -1 && (v.lang.indexOf('es-AR') !== -1 || v.lang.indexOf('es') !== -1);
-                            }});
-                            if (!match) {{
-                                match = filtered.find(function(v) {{ 
-                                    var n = v.name.toLowerCase();
-                                    return (v.lang.indexOf('es-AR') !== -1 || v.lang.indexOf('es') !== -1) && n.indexOf('female') === -1 && n.indexOf('elena') === -1 && n.indexOf('sabina') === -1;
-                                }});
-                            }}
-                            if (match) return match;
-                        }} else {{
-                            var match = filtered.find(function(v) {{ 
-                                var n = v.name.toLowerCase();
-                                return (n.indexOf('elena') !== -1 || n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1) && (v.lang.indexOf('es-AR') !== -1 || v.lang.indexOf('es') !== -1);
-                            }});
-                            if (match) return match;
-                        }}
-                        return filtered[0] || null;
-                    }}
-
-                    if (window.speechSynthesis) {{
-                        window.speechSynthesis.onvoiceschanged = function() {{ getBestVoice(); }};
-                        window.speechSynthesis.getVoices();
-                    }}
-
-                    function startSR(callback) {{
+                    function startSR(callback) {
                         var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-                        if (!SR) {{ alert("Se recomienda usar Google Chrome para dictado de voz."); return; }}
+                        if (!SR) { alert("Se recomienda usar Google Chrome para dictado de voz."); return; }
                         if (rec) rec.stop();
                         rec = new SR();
                         rec.lang = 'es-AR';
                         rec.continuous = true;
                         rec.interimResults = true;
 
-                        rec.onstart = function() {{ document.getElementById('btnMic').classList.add('rec'); }};
-                        rec.onresult = function(e) {{
+                        rec.onstart = function() { document.getElementById('btnMic').classList.add('rec'); };
+                        rec.onresult = function(e) {
                             var str = '';
-                            for (var i = e.resultIndex; i < e.results.length; ++i) {{
+                            for (var i = e.resultIndex; i < e.results.length; ++i) {
                                 if (e.results[i].isFinal) str += e.results[i][0].transcript + ' ';
-                            }}
-                            if (str.trim() !== '') {{
+                            }
+                            if (str.trim() !== '') {
                                 var txts = window.parent.document.querySelectorAll('textarea');
-                                if (txts.length > 0) {{
+                                if (txts.length > 0) {
                                     var inp = txts[0];
                                     var prev = inp.value ? inp.value + " " : "";
                                     var setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
                                     setter.call(inp, prev + str.trim());
-                                    inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                    inp.dispatchEvent(new Event('input', { bubbles: true }));
                                     if (callback) callback();
-                                }}
-                            }}
-                        }};
-                        rec.onerror = function() {{ document.getElementById('btnMic').classList.remove('rec'); }};
-                        rec.onend = function() {{ document.getElementById('btnMic').classList.remove('rec'); }};
+                                }
+                            }
+                        };
+                        rec.onerror = function() { document.getElementById('btnMic').classList.remove('rec'); };
+                        rec.onend = function() { document.getElementById('btnMic').classList.remove('rec'); };
                         rec.start();
-                    }}
+                    }
 
-                    document.getElementById('btnMic').onclick = function() {{ startSR(null); }};
+                    document.getElementById('btnMic').onclick = function() { startSR(null); };
 
-                    document.getElementById('btnVivo').onclick = function() {{
+                    document.getElementById('btnVivo').onclick = function() {
                         vivoActivo = !vivoActivo;
-                        if (vivoActivo) {{
+                        if (vivoActivo) {
                             document.getElementById('btnVivo').classList.add('live');
-                            startSR(function() {{
+                            startSR(function() {
                                 var formBtns = window.parent.document.querySelectorAll('form button[type="submit"]');
-                                if (formBtns.length > 0) {{ formBtns[0].click(); }}
-                            }});
-                        }} else {{
+                                if (formBtns.length > 0) { formBtns[0].click(); }
+                            });
+                        } else {
                             document.getElementById('btnVivo').classList.remove('live');
                             if (rec) rec.stop();
-                            stopSpeech();
-                        }}
-                    }};
+                        }
+                    };
 
                     // Escuchador de teclado: Enter para enviar, y captura directa de portapapeles (Ctrl+V)
-                    try {{
+                    try {
                         var parentDoc = window.parent.document;
                         var txtArea = parentDoc.querySelector('textarea');
-                        if (txtArea && !txtArea.dataset.listenerAttached) {{
+                        if (txtArea && !txtArea.dataset.listenerAttached) {
                             txtArea.dataset.listenerAttached = "true";
                             
-                            txtArea.addEventListener('keydown', function(ev) {{
-                                if (ev.key === 'Enter' && !ev.shiftKey) {{
+                            txtArea.addEventListener('keydown', function(ev) {
+                                if (ev.key === 'Enter' && !ev.shiftKey) {
                                     ev.preventDefault();
                                     var btnSub = parentDoc.querySelector('form button[type="submit"]');
                                     if (btnSub) btnSub.click();
-                                }}
-                            }});
+                                }
+                            });
 
-                            txtArea.addEventListener('paste', function(ev) {{
+                            txtArea.addEventListener('paste', function(ev) {
                                 var items = (ev.clipboardData || ev.originalEvent.clipboardData).items;
-                                for (var index in items) {{
+                                for (var index in items) {
                                     var item = items[index];
-                                    if (item.kind === 'file' && item.type.indexOf('image/') !== -1) {{
+                                    if (item.kind === 'file' && item.type.indexOf('image/') !== -1) {
                                         var blob = item.getAsFile();
                                         var reader = new FileReader();
-                                        reader.onload = function(event) {{
+                                        reader.onload = function(event) {
                                             var b64Data = event.target.result;
-                                            window.parent.postMessage({{ type: 'CHRONN_IMAGE_PASTE', data: b64Data }}, '*');
-                                        }};
+                                            window.parent.postMessage({ type: 'CHRONN_IMAGE_PASTE', data: b64Data }, '*');
+                                        };
                                         reader.readAsDataURL(blob);
-                                    }}
-                                }}
-                            }});
-                        }}
-                    }} catch(e) {{}}
+                                    }
+                                }
+                            });
+                        }
+                    } catch(e) {}
                 </script>
             </body>
             </html>
@@ -1020,58 +992,11 @@ if vista == "chat":
         else:
             respuesta_completa = "⚠️ La clave de API de Anthropic debe configurarse en los Secrets de Streamlit."
 
-        guardar_mensaje_db(sess_id, "assistant", respuesta_completa, act_cuad_save)
-        st.session_state["messages"].append({"role": "assistant", "content": respuesta_completa})
+        # Síntesis neural humana real en el servidor
+        audio_b64_generado = generar_audio_neural(respuesta_completa, voz_sel)
 
-        # Emisión de voz neural natural optimizada
-        if respuesta_completa:
-            texto_tts = respuesta_completa.replace('"', '\\"').replace('\n', ' ').replace('\r', '')[:650]
-            es_tomas_js = str("Tomas" in voz_sel).lower()
-            tts_script = f"""
-            <script>
-                function reproducirExplicacionHumana() {{
-                    if (!window.speechSynthesis) return;
-                    window.speechSynthesis.cancel();
-                    
-                    var u = new SpeechSynthesisUtterance("{texto_tts}");
-                    u.lang = 'es-AR';
-                    u.rate = 0.96;
-                    u.pitch = 1.0;
-
-                    var voices = window.speechSynthesis.getVoices();
-                    var isTomas = {es_tomas_js};
-                    var selVoice = null;
-                    
-                    if (isTomas) {{
-                        selVoice = voices.find(function(v) {{
-                            var n = v.name.toLowerCase();
-                            return (n.indexOf('tomas') !== -1 || n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1) && n.indexOf('female') === -1 && (v.lang.indexOf('es-AR') !== -1 || v.lang.indexOf('es') !== -1);
-                        }});
-                        if (!selVoice) {{
-                            selVoice = voices.find(function(v) {{
-                                var n = v.name.toLowerCase();
-                                return (v.lang.indexOf('es-AR') !== -1 || v.lang.indexOf('es') !== -1) && n.indexOf('female') === -1 && n.indexOf('elena') === -1 && n.indexOf('sabina') === -1;
-                            }});
-                        }}
-                    }} else {{
-                        selVoice = voices.find(function(v) {{
-                            var n = v.name.toLowerCase();
-                            return (n.indexOf('elena') !== -1 || n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1) && (v.lang.indexOf('es-AR') !== -1 || v.lang.indexOf('es') !== -1);
-                        }});
-                    }}
-                    
-                    if (selVoice) u.voice = selVoice;
-                    window.speechSynthesis.speak(u);
-                }}
-
-                if (window.speechSynthesis.getVoices().length === 0) {{
-                    window.speechSynthesis.onvoiceschanged = reproducirExplicacionHumana;
-                }} else {{
-                    reproducirExplicacionHumana();
-                }}
-            </script>
-            """
-            components.html(tts_script, height=0)
+        guardar_mensaje_db(sess_id, "assistant", respuesta_completa, act_cuad_save, audio_b64=audio_b64_generado)
+        st.session_state["messages"].append({"role": "assistant", "content": respuesta_completa, "audio_b64": audio_b64_generado})
 
         st.rerun()
 
