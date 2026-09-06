@@ -10,11 +10,15 @@ import asyncio
 from datetime import datetime
 import streamlit.components.v1 as components
 
+# --- MOTOR DE INTELIGENCIA ARTIFICIAL: GOOGLE CLOUD VERTEX AI ---
 try:
-    import anthropic
+    import vertexai
+    from google.oauth2 import service_account
+    from vertexai.generative_models import GenerativeModel, Part, HarmBlockThreshold, HarmCategory
 except ImportError:
-    anthropic = None
+    vertexai = None
 
+# --- SÍNTESIS DE VOZ NEURAL HUMANA ---
 try:
     import edge_tts
 except ImportError:
@@ -424,21 +428,26 @@ def obtener_contexto_biblioteca():
     nombres = ", ".join([r[0] for r in filas])
     return f"\nMATERIALES DE CONSULTA EN BIBLIOTECA DISPONIBLES: [{nombres}]."
 
-# ----------------- CREDENCIALES DE ANTHROPIC -----------------
-def obtener_claude_api_key():
+# ----------------- INICIALIZACIÓN VERTEX AI (GOOGLE CLOUD) -----------------
+def inicializar_vertex_ia():
+    """Configura la conexión soberana a Google Cloud Vertex AI con BLOCK_NONE"""
+    if not vertexai:
+        return False, "⚠️ Dependencias de Google Cloud no instaladas. Asegúrese de incluir google-cloud-aiplatform y google-auth en requirements.txt."
+    
     try:
-        if "ANTHROPIC_API_KEY" in st.secrets:
-            val = st.secrets["ANTHROPIC_API_KEY"]
-            if val:
-                return "".join(str(val).split()).strip('"').strip("'")
-    except Exception:
-        pass
-    env_key = os.getenv("ANTHROPIC_API_KEY")
-    if env_key:
-        return "".join(str(env_key).split()).strip('"').strip("'")
-    return None
+        if "gcp_service_account" not in st.secrets:
+            return False, "⚠️ No se encontró la sección [gcp_service_account] en los Secrets de Streamlit."
+        
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        credentials = service_account.Credentials.from_service_account_info(creds_dict)
+        
+        project_id = creds_dict.get("project_id", "project-ae5f372f-e4b7-42a8-902")
+        vertexai.init(project=project_id, location="us-central1", credentials=credentials)
+        return True, None
+    except Exception as e:
+        return False, f"⚠️ Error autenticando con Google Cloud Vertex AI: {str(e)}"
 
-CLAUDE_API_KEY = obtener_claude_api_key()
+VERTEX_OK, VERTEX_ERR_MSG = inicializar_vertex_ia()
 
 # ----------------- DIRECTIVAS PEDAGÓGICAS DE CÁTEDRA -----------------
 PROMPTS_CHRONN = {
@@ -484,7 +493,7 @@ if "cuaderno_activo" not in st.session_state:
     st.session_state["cuaderno_activo"] = "General"
 
 if "modelo_ia_seleccionado" not in st.session_state:
-    st.session_state.modelo_ia_seleccionado = "Opus 5"
+    st.session_state.modelo_ia_seleccionado = "Gemini 1.5 Pro"
 
 if "modo_operativo" not in st.session_state:
     st.session_state.modo_operativo = "Profesor De Medicina"
@@ -908,32 +917,39 @@ if vista == "chat":
             components.html(dock_html, height=46)
 
         with col_sel:
-            mod_act = st.session_state.get("modelo_ia_seleccionado", "Opus 5")
+            mod_act = st.session_state.get("modelo_ia_seleccionado", "Gemini 1.5 Pro")
             with st.popover(f"{mod_act} ▾", use_container_width=True):
-                st.caption("Cerebro CHRONN")
-                if st.form_submit_button("🏛️ Opus 5 (Predeterminado)", use_container_width=True):
-                    st.session_state["modelo_ia_seleccionado"] = "Opus 5"
+                st.caption("Cerebro CHRONN (Vertex AI)")
+                if st.form_submit_button("⚡ Gemini 1.5 Pro (Predeterminado)", use_container_width=True):
+                    st.session_state["modelo_ia_seleccionado"] = "Gemini 1.5 Pro"
                     st.rerun()
-                if st.form_submit_button("🔬 Fable 5.1 (Investigación)", use_container_width=True):
-                    st.session_state["modelo_ia_seleccionado"] = "Fable 5.1"
+                if st.form_submit_button("🚀 Gemini 1.5 Flash (Ultra Rápido)", use_container_width=True):
+                    st.session_state["modelo_ia_seleccionado"] = "Gemini 1.5 Flash"
                     st.rerun()
 
     if submit_pressed and texto_ingresado and texto_ingresado.strip():
         st.session_state["dispatch_payload"] = texto_ingresado.strip()
         st.rerun()
 
-    # Procesamiento controlado y unívoco
+    # Procesamiento soberano sobre Google Cloud Vertex AI
     if st.session_state.get("dispatch_payload"):
         prompt = st.session_state.pop("dispatch_payload")
         act_cuad_save = st.session_state.get("cuaderno_activo", "General")
         sess_id = st.session_state.get("current_session_id")
 
         img_b64 = None
+        mime_type = "image/png"
+        raw_bytes = None
+        
         if archivo_adj:
-            img_bytes = archivo_adj.read()
-            img_b64 = base64.b64encode(img_bytes).decode('utf-8')
+            raw_bytes = archivo_adj.read()
+            mime_type = archivo_adj.type or "image/png"
+            if mime_type.startswith("image/"):
+                img_b64 = base64.b64encode(raw_bytes).decode('utf-8')
         elif st.session_state.get("pasted_image_b64"):
             img_b64 = st.session_state.pop("pasted_image_b64")
+            raw_bytes = base64.b64decode(img_b64)
+            mime_type = "image/png"
 
         crear_o_actualizar_sesion_db(sess_id, prompt, act_cuad_save)
         guardar_mensaje_db(sess_id, "user", prompt, act_cuad_save, img_b64)
@@ -944,53 +960,53 @@ if vista == "chat":
 
         respuesta_completa = ""
 
-        if anthropic and CLAUDE_API_KEY and not CLAUDE_API_KEY.startswith("TU_CLAVE"):
-            client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
-            
-            contexto_biblioteca = obtener_contexto_biblioteca()
-            contexto_turno = (
-                "CONTEXTO DEL HILO: Este es el PRIMER mensaje del hilo. Saluda brevemente a Gail sin explicar tus funciones ni currículum." 
-                if es_primer_turno else 
-                "CONTEXTO DEL HILO: La conversación ya está en curso. NO saludes a Gail, no uses fórmulas de apertura, responde directamente al grano con el Sí o No categórico y la fundamentación."
-            )
-            system_prompt = f"{PROMPTS_CHRONN[st.session_state.modo_operativo]}\nCuaderno de estudio activo: '{act_cuad_save}'.{contexto_biblioteca}\n{contexto_turno}"
-
-            if img_b64:
-                user_payload = [
-                    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": img_b64}},
-                    {"type": "text", "text": prompt}
-                ]
-            else:
-                user_payload = prompt
-
-            elegido = st.session_state.get("modelo_ia_seleccionado", "Opus 5")
-            candidatos = (
-                ["claude-fable-5-1", "claude-3-5-sonnet-20241022", "claude-3-5-sonnet-20240620"]
-                if elegido == "Fable 5.1" else
-                ["claude-opus-5", "claude-3-opus-20240229", "claude-3-5-sonnet-20241022", "claude-3-5-sonnet-20240620"]
-            )
-
-            exito = False
-            for mod in candidatos:
-                try:
-                    respuesta_completa = ""
-                    with client.messages.stream(
-                        model=mod,
-                        max_tokens=2500,
-                        system=system_prompt,
-                        messages=[{"role": "user", "content": user_payload}],
-                    ) as stream:
-                        for chunk in stream.text_stream:
-                            respuesta_completa += chunk
-                    exito = True
-                    break
-                except Exception:
-                    continue
-
-            if not exito:
-                respuesta_completa = "Aviso CHRONN: La conexión está temporalmente saturada. Por favor, reintente la consulta."
+        if not VERTEX_OK:
+            respuesta_completa = VERTEX_ERR_MSG
         else:
-            respuesta_completa = "⚠️ La clave de API de Anthropic debe configurarse en los Secrets de Streamlit."
+            try:
+                contexto_biblioteca = obtener_contexto_biblioteca()
+                contexto_turno = (
+                    "CONTEXTO DEL HILO: Este es el PRIMER mensaje del hilo. Saluda brevemente a Gail sin explicar tus funciones ni currículum." 
+                    if es_primer_turno else 
+                    "CONTEXTO DEL HILO: La conversación ya está en curso. NO saludes a Gail, no uses fórmulas de apertura, responde directamente al grano con el Sí o No categórico y la fundamentación."
+                )
+                system_instruction = f"{PROMPTS_CHRONN[st.session_state.modo_operativo]}\nCuaderno de estudio activo: '{act_cuad_save}'.{contexto_biblioteca}\n{contexto_turno}"
+
+                # Desactivación total de censura (BLOCK_NONE) en todas las categorías
+                safety_settings = {
+                    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+                    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                }
+
+                elegido = st.session_state.get("modelo_ia_seleccionado", "Gemini 1.5 Pro")
+                model_endpoint = "gemini-1.5-flash-002" if "Flash" in elegido else "gemini-1.5-pro-002"
+
+                model = GenerativeModel(
+                    model_name=model_endpoint,
+                    system_instruction=system_instruction,
+                    safety_settings=safety_settings
+                )
+
+                # Construcción del contenido multimodal
+                contents = []
+                if raw_bytes:
+                    contents.append(Part.from_data(data=raw_bytes, mime_type=mime_type))
+                contents.append(prompt)
+
+                response = model.generate_content(
+                    contents,
+                    generation_config={"temperature": 0.2, "max_output_tokens": 4096}
+                )
+
+                if response and response.text:
+                    respuesta_completa = response.text
+                else:
+                    respuesta_completa = "Aviso CHRONN: La consulta no pudo generar texto de respuesta. Por favor intente nuevamente."
+
+            except Exception as e:
+                respuesta_completa = f"⚠️ Error en ejecución de Vertex AI: {str(e)}"
 
         # Síntesis neural humana real en el servidor
         audio_b64_generado = generar_audio_neural(respuesta_completa, voz_sel)
